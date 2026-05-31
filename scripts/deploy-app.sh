@@ -10,7 +10,7 @@ REGION="us-east-1"
 NAMESPACE="retail-app"
 
 # ------------------------------------------------------------------
-# 1. Prerequisites: kubectl, helm (for FluentBit if needed later)
+# 1. Prerequisites: kubectl, openssl, jq
 # ------------------------------------------------------------------
 echo "📋 Checking prerequisites..."
 
@@ -19,8 +19,15 @@ if ! command -v kubectl &> /dev/null; then
   exit 1
 fi
 
-# Helm is only needed if we decide to use it for FluentBit, but we have a static manifest now.
-# We'll skip Helm install to keep things simple.
+if ! command -v openssl &> /dev/null; then
+  echo "❌ openssl not found. Please install it first."
+  exit 1
+fi
+
+if ! command -v jq &> /dev/null; then
+  echo "❌ jq not found. Please install it first."
+  exit 1
+fi
 
 # ------------------------------------------------------------------
 # 2. Connect to EKS cluster
@@ -36,29 +43,30 @@ echo "📁 Creating namespace '$NAMESPACE'..."
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------
-# 4. RBAC for developer read-only access
+# 4. RBAC for developer read-only access + External Services
 # ------------------------------------------------------------------
-echo "🔐 Applying RBAC..."
+echo "🔐 Applying RBAC and external database services..."
 kubectl apply -f kubernetes/rbac/dev-view-role.yaml
 kubectl apply -f kubernetes/retail-store/db-external-services.yaml
+
 # ------------------------------------------------------------------
-# 5. Get endpoints from Terraform outputs
+# 5. Fetch infrastructure endpoints (AWS CLI, no Terraform)
 # ------------------------------------------------------------------
 echo "📊 Fetching infrastructure endpoints..."
+MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
+MYSQL_PORT=3306
 
-cd terraform
-MYSQL_FULL=$(terraform output -raw mysql_endpoint)
-POSTGRES_FULL=$(terraform output -raw postgresql_endpoint)
-DYNAMODB_TABLE=$(terraform output -raw dynamodb_table_name)
-VPC_ID=$(terraform output -raw vpc_id)
-LB_ROLE_ARN=$(terraform output -raw load_balancer_controller_role_arn)
-cd ..
+POSTGRES_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-postgresql --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
+POSTGRES_PORT=5432
 
-# Extract host and port for JDBC URLs
-MYSQL_HOST=$(echo $MYSQL_FULL | cut -d: -f1)
-MYSQL_PORT=$(echo $MYSQL_FULL | cut -d: -f2)
-POSTGRES_HOST=$(echo $POSTGRES_FULL | cut -d: -f1)
-POSTGRES_PORT=$(echo $POSTGRES_FULL | cut -d: -f2)
+DYNAMODB_TABLE="project-bedrock-retail-store"
+
+# Get VPC ID by tag (Name=project-bedrock-vpc)
+VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region "$REGION")
+
+# Get the account ID and construct the IAM role ARN
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
+LB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/project-bedrock-lb-controller-role"
 
 # ------------------------------------------------------------------
 # 6. Get database credentials from Secrets Manager
@@ -101,12 +109,9 @@ kubectl create secret generic retail-store-secrets \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------
-# 8. Deploy Retail Store Microservices (corrected images + args)
+# 8. Deploy Retail Store Microservices
 # ------------------------------------------------------------------
 echo "📦 Deploying Retail Store from local manifests..."
-
-# Apply all YAML files in kubernetes/retail-store/ that we've already crafted
-# They include the correct image tags (v0.4.0) and args for DB overrides.
 kubectl apply -f kubernetes/retail-store/ --namespace="$NAMESPACE"
 
 # ------------------------------------------------------------------
@@ -119,18 +124,14 @@ done
 sleep 5
 
 # ------------------------------------------------------------------
-# 9. Install AWS Load Balancer Controller (dynamic VPC ID, pod capacity aware)
+# 9. Install AWS Load Balancer Controller (no Terraform)
 # ------------------------------------------------------------------
 echo "🌐 Installing AWS Load Balancer Controller..."
 
-# Generate TLS certificate for webhook (needed even if disabled, to avoid crash)
+# Generate TLS certificate for webhook
 openssl req -x509 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -days 365 -nodes -subj "/CN=aws-load-balancer-controller"
 kubectl create secret tls aws-load-balancer-tls --cert=/tmp/tls.crt --key=/tmp/tls.key -n kube-system --dry-run=client -o yaml | kubectl apply -f -
 rm /tmp/tls.key /tmp/tls.crt
-
-# Get dynamic values from Terraform
-LB_ROLE_ARN=$(cd terraform && terraform output -raw load_balancer_controller_role_arn)
-VPC_ID=$(cd terraform && terraform output -raw vpc_id)
 
 # Clean up previous controller
 kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
@@ -228,49 +229,45 @@ spec:
       terminationGracePeriodSeconds: 10
 EOF
 
-kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balancer-controller -n kube-system
-echo "  ✅ LB Controller is running."
-
-# Wait for the controller to be ready
 echo "  ⏳ Waiting for LB controller to start..."
 kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balancer-controller -n kube-system
-
 echo "  ✅ LB Controller is running."
 
-# Scale back up retail services (important for Ingress targets)
+# ------------------------------------------------------------------
+# 10. Scale back up retail services
+# ------------------------------------------------------------------
 echo "  📈 Scaling retail services back up..."
 for svc in carts catalog checkout orders rabbitmq redis ui; do
   kubectl scale deployment $svc -n "$NAMESPACE" --replicas=1 --timeout=30s 2>/dev/null || true
 done
 
 # ------------------------------------------------------------------
-# 10. Apply Ingress (after LB controller is ready)
+# 11. Apply Ingress
 # ------------------------------------------------------------------
 echo "🚪 Applying Ingress..."
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 # ------------------------------------------------------------------
-# 11. Deploy FluentBit for logging (optional – may be removed if capacity is tight)
+# 12. Deploy FluentBit (optional)
 # ------------------------------------------------------------------
 echo "📊 Deploying FluentBit..."
-kubectl apply -f kubernetes/observability/fluentbit.yaml --namespace=amazon-cloudwatch || true
-# Note: FluentBit is a DaemonSet, so it uses 1 pod per node. If pod capacity is low, you can keep it commented out.
+kubectl apply -f kubernetes/observability/fluentbit.yaml --namespace=amazon-cloudwatch 2>/dev/null || true
 
 # ------------------------------------------------------------------
-# 12. Update Lambda function code
+# 13. Update Lambda function code
 # ------------------------------------------------------------------
 echo "⚡ Packaging and updating Lambda..."
 cd lambda/bedrock-asset-processor
-zip -r ../../bedrock-asset-processor.zip index.py
+zip -r ../bedrock-asset-processor.zip index.py
 cd ../..
 aws lambda update-function-code \
   --function-name bedrock-asset-processor \
-  --zip-file fileb://bedrock-asset-processor.zip \
+  --zip-file fileb://lambda/bedrock-asset-processor.zip \
   --region "$REGION" \
   --no-cli-pager
 
 # ------------------------------------------------------------------
-# 13. Wait for ALB and print the URL
+# 14. Wait for ALB and print the URL
 # ------------------------------------------------------------------
 echo "⏳ Waiting for ALB to be provisioned..."
 sleep 30
