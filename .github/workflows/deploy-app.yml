@@ -83,9 +83,10 @@ jobs:
             --from-literal=POSTGRES_PASSWORD=$DB_PASSWORD \
             --dry-run=client -o yaml | kubectl apply -f -
       
-      - name: Clone retail store sample app
+      - name: Apply local Kubernetes manifests
         run: |
-          git clone https://github.com/aws-containers/retail-store-sample-app.git /tmp/retail-store
+          kubectl apply -f kubernetes/retail-store/ --namespace retail-app
+          kubectl apply -f kubernetes/rbac/dev-view-role.yaml
       
       - name: Deploy retail store application
         run: |
