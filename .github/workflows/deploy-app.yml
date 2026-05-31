@@ -88,11 +88,12 @@ jobs:
           kubectl apply -f kubernetes/retail-store/ --namespace retail-app
           kubectl apply -f kubernetes/rbac/dev-view-role.yaml
       
-      - name: Deploy retail store application
+      - name: Apply local Kubernetes manifests
         run: |
-          # Apply the retail store manifests
-          kubectl apply -f /tmp/retail-store-app/kubernetes/ --namespace=${{ env.NAMESPACE }}
-          
+          kubectl apply -f kubernetes/retail-store/ --namespace retail-app
+          kubectl apply -f kubernetes/rbac/dev-view-role.yaml
+          kubectl apply -f kubernetes/retail-store/db-external-services.yaml
+
           # Wait for deployments to be ready
           kubectl wait --for=condition=available --timeout=600s deployment --all -n ${{ env.NAMESPACE }}
       
