@@ -107,23 +107,23 @@ resource "aws_iam_openid_connect_provider" "eks" {
   }
 }
 
-resource "kubernetes_config_map_v1_data" "aws_auth" {
-  depends_on = [aws_eks_cluster.main]
-  metadata {
-    name      = "aws-auth"
-    namespace = "kube-system"
-  }
-  force = true
-  data = {
-    mapUsers = yamlencode([
-      {
-        userarn  = aws_iam_user.bedrock_dev_view.arn
-        username = "bedrock-dev-view"
-        groups   = ["view"]
-      }
-    ])
-  }
-}
+# resource "kubernetes_config_map_v1_data" "aws_auth" {
+#   depends_on = [aws_eks_cluster.main]
+#   metadata {
+#     name      = "aws-auth"
+#     namespace = "kube-system"
+#   }
+#   force = true
+#   data = {
+#     mapUsers = yamlencode([
+#       {
+#         userarn  = aws_iam_user.bedrock_dev_view.arn
+#         username = "bedrock-dev-view"
+#         groups   = ["view"]
+#       }
+#     ])
+#   }
+# }
 
 # =============================================================================
 # AWS LOAD BALANCER CONTROLLER - IRSA Setup
