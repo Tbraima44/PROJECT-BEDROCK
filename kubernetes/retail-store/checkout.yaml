@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: checkout
+  namespace: retail-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: checkout
+  template:
+    metadata:
+      labels:
+        app: checkout
+    spec:
+      containers:
+      - name: checkout
+        image: public.ecr.aws/aws-containers/retail-store-sample-checkout:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DYNAMODB_TABLE
+          valueFrom:
+            configMapKeyRef:
+              key: DYNAMODB_TABLE
+              name: retail-store-config
+        - name: AWS_REGION
+          valueFrom:
+            configMapKeyRef:
+              key: AWS_REGION
+              name: retail-store-config
+        - name: ENDPOINTS_ORDERS
+          value: "http://orders:80"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: checkout
+  namespace: retail-app
+spec:
+  selector:
+    app: checkout
+  ports:
+  - port: 80
+    targetPort: 8080

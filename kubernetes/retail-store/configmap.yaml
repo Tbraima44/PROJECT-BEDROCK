@@ -1,0 +1,15 @@
+# ConfigMap with database connection details
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retail-store-config
+  namespace: retail-app
+data:
+  MYSQL_HOST: "project-bedrock-mysql.cluster-xxxxxxxx.us-east-1.rds.amazonaws.com"  # Replace with actual endpoint
+  MYSQL_PORT: "3306"
+  MYSQL_DATABASE: "retaildb"
+  POSTGRES_HOST: "project-bedrock-postgresql.cluster-xxxxxxxx.us-east-1.rds.amazonaws.com"  # Replace with actual endpoint
+  POSTGRES_PORT: "5432"
+  POSTGRES_DATABASE: "retaildb"
+  DYNAMODB_TABLE: "project-bedrock-retail-store"
+  AWS_REGION: "us-east-1"

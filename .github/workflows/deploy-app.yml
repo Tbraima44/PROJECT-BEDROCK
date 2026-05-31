@@ -1,0 +1,173 @@
+# Application deployment workflow
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'kubernetes/**'
+      - 'lambda/**'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: project-bedrock-cluster
+  NAMESPACE: retail-app
+
+jobs:
+  deploy-application:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
+      
+      - name: Verify cluster access
+        run: |
+          kubectl get nodes
+          kubectl get ns
+      
+      - name: Create namespace if not exists
+        run: |
+          kubectl create namespace ${{ env.NAMESPACE }} --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Apply RBAC configuration
+        run: |
+          kubectl apply -f kubernetes/rbac/dev-view-role.yaml
+      
+      - name: Create ConfigMap and Secrets
+        run: |
+          # Update ConfigMap with actual RDS endpoints
+          export MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text)
+          export POSTGRES_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-postgresql --query 'DBInstances[0].Endpoint.Address' --output text)
+          
+          # Create ConfigMap
+          kubectl create configmap retail-store-config \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=MYSQL_HOST=$MYSQL_HOST \
+            --from-literal=MYSQL_PORT=3306 \
+            --from-literal=MYSQL_DATABASE=retaildb \
+            --from-literal=POSTGRES_HOST=$POSTGRES_HOST \
+            --from-literal=POSTGRES_PORT=5432 \
+            --from-literal=POSTGRES_DATABASE=retaildb \
+            --from-literal=DYNAMODB_TABLE=project-bedrock-retail-store \
+            --from-literal=AWS_REGION=${{ env.AWS_REGION }} \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          # Get database password from Secrets Manager
+          export DB_PASSWORD=$(aws secretsmanager get-secret-value --secret-id project-bedrock-db-credentials --query 'SecretString' --output text | jq -r '.mysql_password')
+          
+          # Create Secret
+          kubectl create secret generic retail-store-secrets \
+            --namespace=${{ env.NAMESPACE }} \
+            --from-literal=MYSQL_USERNAME=admin \
+            --from-literal=MYSQL_PASSWORD=$DB_PASSWORD \
+            --from-literal=POSTGRES_USERNAME=admin \
+            --from-literal=POSTGRES_PASSWORD=$DB_PASSWORD \
+            --dry-run=client -o yaml | kubectl apply -f -
+      
+      - name: Clone retail store sample app
+        run: |
+          git clone https://github.com/aws-containers/retail-store-sample-app.git /tmp/retail-store
+      
+      - name: Deploy retail store application
+        run: |
+          # Apply the retail store manifests
+          kubectl apply -f /tmp/retail-store-app/kubernetes/ --namespace=${{ env.NAMESPACE }}
+          
+          # Wait for deployments to be ready
+          kubectl wait --for=condition=available --timeout=600s deployment --all -n ${{ env.NAMESPACE }}
+      
+      - name: Apply patches for managed databases
+        run: |
+          # Apply the patch to override database configurations
+          kubectl apply -f kubernetes/retail-store/deployment-patch.yaml
+          
+          # Restart deployments to pick up changes
+          kubectl rollout restart deployment -n ${{ env.NAMESPACE }}
+          
+          # Wait for rollouts to complete
+          kubectl rollout status deployment -n ${{ env.NAMESPACE }} --timeout=300s
+      
+      - name: Deploy Ingress
+        run: |
+          kubectl apply -f kubernetes/retail-store/ingress.yaml
+      
+      - name: Deploy FluentBit for logging
+        run: |
+          kubectl apply -f kubernetes/observability/fluentbit.yaml
+      
+      - name: Deploy Lambda function
+        run: |
+          # Package Lambda function
+          cd lambda/bedrock-asset-processor
+          zip -r ../bedrock-asset-processor.zip .
+          cd ../..
+          
+          # Update Lambda function
+          aws lambda update-function-code \
+            --function-name bedrock-asset-processor \
+            --zip-file fileb://lambda/bedrock-asset-processor.zip \
+            --region ${{ env.AWS_REGION }}
+      
+      - name: Verify deployment
+        run: |
+          echo "Checking pod status..."
+          kubectl get pods -n ${{ env.NAMESPACE }}
+          
+          echo "Checking services..."
+          kubectl get svc -n ${{ env.NAMESPACE }}
+          
+          echo "Checking ingress..."
+          kubectl get ingress -n ${{ env.NAMESPACE }}
+          
+          # Get the ALB URL
+          ALB_URL=$(kubectl get ingress retail-store-ingress -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "Application URL: http://$ALB_URL"
+      
+      - name: Output application URL
+        id: app-url
+        run: |
+          ALB_URL=$(kubectl get ingress retail-store-ingress -n ${{ env.NAMESPACE }} -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "app_url=http://$ALB_URL" >> $GITHUB_OUTPUT
+      
+      - name: Comment on PR with deployment info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const appUrl = '${{ steps.app-url.outputs.app_url }}';
+            const output = `## 🚀 Application Deployed Successfully
+            
+            **Application URL:** [${appUrl}](${appUrl})
+            
+            **Deployment Details:**
+            - Namespace: retail-app
+            - Cluster: project-bedrock-cluster
+            - Region: us-east-1
+            
+            Please allow a few minutes for the ALB to become active and DNS to propagate.`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });
