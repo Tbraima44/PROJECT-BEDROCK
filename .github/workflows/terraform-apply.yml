@@ -30,12 +30,11 @@ jobs:
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.0
-          
+
       - name: Package Lambda function
         run: |
           cd lambda/bedrock-asset-processor
-          zip -r ../../bedrock-asset-processor.zip index.py
-          cd ../..
+          zip -r ../bedrock-asset-processor.zip index.py
 
       - name: Terraform Init
         working-directory: terraform
