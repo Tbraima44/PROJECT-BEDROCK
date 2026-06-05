@@ -1,143 +1,251 @@
-# Project Bedrock - InnovateMart EKS Deployment
+# 🚀 Project Bedrock – InnovateMart EKS Deployment
 
-## Overview
-Production-grade microservices deployment on AWS EKS for InnovateMart's retail store application.
+Production‑grade microservices platform on Amazon EKS, fully automated with Terraform, Kubernetes, GitHub Actions, and serverless components.
 
-## Architecture
-- EKS Cluster with managed node groups
-- RDS MySQL and PostgreSQL databases
-- DynamoDB tables
-- S3 bucket with Lambda processing
-- CloudWatch logging and monitoring
-- CI/CD with GitHub Actions
+---
 
-## Prerequisites
-- AWS Account with appropriate permissions
-- Terraform >= 1.5.0
-- kubectl
-- AWS CLI
-- Docker (for Lambda packaging)
+## 📌 Overview
 
-## Quick Start
-1. Clone the repository
-2. Configure AWS credentials
-3. Run the setup script
-4. Follow the deployment guide in docs/
+**Company:** InnovateMart Inc.  
+**Mission:** “Project Bedrock” – deliver a secure, observable, and scalable e‑commerce application using managed AWS services.  
+**Architecture:** Microservices deployed on EKS with managed databases (RDS MySQL/PostgreSQL, DynamoDB), external ALB ingress, CloudWatch logging, and an event‑driven S3→Lambda pipeline.
 
-## Directory Structure
+---
 
-project-bedrock/
-├── terraform/           # Infrastructure as Code
-├── kubernetes/          # Kubernetes manifests
-├── lambda/              # Serverless functions
-├── .github/            # CI/CD workflows
-├── docs/               # Documentation
-├── grading.json
-├── README.md
-├── scripts/            # Utility scripts
-└── environments/       # Environment-specific configs
+## 🧱 Architecture Diagram
 
+![alt text](docs/architecture.png)
 
+- **VPC** `project-bedrock-vpc` with public/private subnets across 2 AZs
+- **EKS Cluster** `project-bedrock-cluster` (v1.34+), 8× t3.micro nodes
+- **Data Layer:** Amazon RDS (MySQL, PostgreSQL) in private subnets, DynamoDB table
+- **Application:** Retail Store Sample App (`retail-app` namespace)
+- **Ingress:** AWS Load Balancer Controller → Application Load Balancer (ALB)
+- **Observability:** Control plane logs + FluentBit → CloudWatch
+- **Serverless:** S3 bucket `bedrock-assets-[id]` → Lambda `bedrock-asset-processor` → CloudWatch
 
-## 📋 Quick Start Guide
+---
 
-### 1. Set Up Credentials
-```bash
-# Generate and set database password
-chmod +x scripts/setup-credentials.sh
-./scripts/setup-credentials.sh "YourSecurePassword123!"
+## 📁 Repository Structure
+
 ```
-# Edit terraform/terraform.tfvars
-# Replace YOUR-STUDENT-ID with your actual student ID
+├── .github/workflows/          # CI/CD pipelines
+│   ├── deploy-app.yaml         # Deploys application to EKS
+│   ├── terraform-apply.yml     # Runs on merge to main, applies infrastructure
+│   └── terraform-plan.yml      # Runs on PR, posts plan
+│
+├── docs/                     # Documentation
+│   ├── architecture.md
+│   ├── architecture.png
+│   └── deployment-guide.md
+│
+├── kubernetes/                 # Application manifests & RBAC
+│   ├── observability/
+│   │   └── fluentbit.yaml      # FluentBit DaemonSet (optional)
+│   ├── rbac/
+│   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
+│   ├── retail-store/           # Microservice Deployments, Services, Ingress, ExternalName services
+│   │   ├── carts.yaml
+│   │   ├── catalog.yaml
+│   │   ├── checkout.yaml
+│   │   ├── configmap.yaml      # (created dynamically by script)
+│   │   ├── secret.yaml         # (created dynamically by script)
+│   │   ├── db-external-services.yaml   # ExternalName services for managed DBs
+│   │   ├── ingress.yaml
+│   │   ├── orders.yaml
+│   │   ├── rabbitmq.yaml
+│   │   ├── redis.yaml
+│   │   └── ui.yaml
+│   └── namespace.yaml
+│   
+├── lambda/                     # Lambda function source
+│   └── bedrock-asset-processor/
+│       ├── index.py
+│       └── requirements.txt
+│
+├── scripts/                    # Automation scripts
+│   ├── deploy-app.sh           # Main application deployment script
+│   ├── generate-grading-json.sh # Generate grading.json file
+│   └── get-endpoints.sh
+│
+├── terraform/                  # IaC – VPC, EKS, RDS, IAM, S3, Lambda, etc.
+│   ├── backend.tf              # S3 remote state
+│   ├── dynamodb.tf
+│   ├── eks.tf
+│   ├── iam.tf
+│   ├── lambda.tf
+│   ├── main.tf                 # Provider, secrets, IAM, LB controller
+│   ├── outputs.tf
+│   ├── rds.tf
+│   ├── remote-state.tf         # (not used; bucket created manually)
+│   ├── s3.tf
+│   ├── variables.tf
+│   ├── versions.tf
+│   └── vpc.tf
+│
+├── .gitignore
+├── grading.json              # Generated after deployment
+└── README.md               
+```
 
-2. Deploy Infrastructure
+
+---
+
+## 🔧 Prerequisites
+
+### Local Machine
+- **AWS CLI** (`aws configure` with admin credentials)
+- **Terraform** ≥ 1.5.0
+- **kubectl**
+- **jq**, **openssl**
+- **Git**
+
+### AWS Account
+- An S3 bucket for remote Terraform state (e.g., `project-bedrock-tfstate-[your-id]`).  
+  *If it doesn’t exist, create it manually once.*
+
+### GitHub Repository
+- Add the following **repository secrets**:
+  - `AWS_ACCESS_KEY_ID` – IAM user with admin permissions
+  - `AWS_SECRET_ACCESS_KEY`
+  - `DB_PASSWORD` – your chosen database password (e.g., `YourSecurePassword123!`)
+
+---
+
+## 🚀 Quick Start – Local Deployment
+
+All commands are run from the repository root.
+
+### 1. Set database password
+```bash
+export DB_PASSWORD="YourSecurePassword123!"   # Use your own strong password
+```
+
+### 2. Deploy infrastructure with Terraform
 
 ```bash
 cd terraform
 terraform init
-terraform plan
-terraform apply -auto-approve
-```
-
-3. Get Endpoints
-
-```bash
+terraform apply -auto-approve -var="db_password=$DB_PASSWORD"
 cd ..
-./scripts/get-endpoints.sh
 ```
 
-4. Deploy Application
+**Note:** The first apply creates a new VPC, EKS cluster (≈15‑20 min), RDS, etc. Remote state is stored in S3.
+
+### 3. Deploy the application
 
 ```bash
 ./scripts/deploy-app.sh
 ```
 
-5. Access the Application
+This script will:
 
-After deployment, get your ALB URL:
+· Create the retail-app namespace, RBAC, and ExternalName services for databases
+· Fetch RDS endpoints and credentials from AWS Secrets Manager
+· Deploy all microservices with correct images and database connections
+· Install the AWS Load Balancer Controller (with proper IAM and CRDs)
+· Apply the Ingress and wait for the ALB
 
-```bash
-kubectl get ingress retail-store-ingress -n retail-app
-```
-
-The URL will be in the ADDRESS column. Update this README with that URL.
-
-🔧 Infrastructure Details
-
-Database Connections
-
-· MySQL: project-bedrock-mysql.xxxxx.us-east-1.rds.amazonaws.com:3306
-· PostgreSQL: project-bedrock-postgresql.xxxxx.us-east-1.rds.amazonaws.com:5432
-· DynamoDB: project-bedrock-retail-store
-
-Developer Access
-
-· IAM User: bedrock-dev-view
-· AWS Console: ReadOnlyAccess + S3 PutObject on assets bucket
-· Kubernetes: View-only ClusterRole in retail-app namespace
-
-📊 Monitoring
-
-· CloudWatch Logs: /aws/eks/project-bedrock-cluster/cluster
-· Container Insights: /aws/containerinsights/project-bedrock-cluster/application
-
-🧹 Cleanup
+### 4. Get the application URL
 
 ```bash
-# Delete application
-kubectl delete namespace retail-app
-
-# Destroy infrastructure
-cd terraform
-terraform destroy -auto-approve
+kubectl get ingress -n retail-app
 ```
 
+Open the ADDRESS in your browser – the retail store is live.
+
+---
+
+## 🤖 CI/CD Automation
+
+The repository includes three GitHub Actions workflows:
+
+| **Workflow** | **Trigger** | **Action** |
+|--------------|-------------|------------|
+|**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
+| **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
+| **Deploy Application** | Push to main (kubernetes/**, lambda/**, scripts/**) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
+
+After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
+
+---
+
+## 🔐 Developer Access
+
+An IAM user bedrock-dev-view is created with:
+
+**· AWS Console:** ReadOnlyAccess policy
+**· S3:** s3:PutObject on the assets bucket
+**· Kubernetes:** view ClusterRole in retail-app namespace
+
+Credentials are output by Terraform. To test:
+
+```bash
+aws configure --profile bedrock-dev    # use the access key/secret from Terraform output
+aws eks update-kubeconfig --name project-bedrock-cluster --profile bedrock-dev
+kubectl get pods -n retail-app         # succeeds
+kubectl delete pod ... -n retail-app   # must FAIL
 ```
 
+---
 
+## 📊 Observability
 
-# STEP 9: Generate grading.json
+· **EKS Control Plane Logs:** API, Audit, Authenticator, ControllerManager, Scheduler → CloudWatch
+· **Application Logs:** FluentBit DaemonSet ships container logs to CloudWatch Logs group /aws/containerinsights/project-bedrock-cluster/application
+· **CloudWatch Container Insights** is available via the EKS add‑on.
+
+---
+
+## ⚡ Serverless Extension
+
+An S3 bucket bedrock-assets-[your-student-id] triggers a Lambda bedrock-asset-processor on object creation.
+The Lambda logs "Image received: [filename]" to CloudWatch.
+The bedrock-dev-view user can upload test files.
+
+```bash
+echo "test" > test.jpg
+aws s3 cp test.jpg s3://bedrock-assets-[your-id]/ --profile bedrock-dev
+```
+
+Check CloudWatch logs for /aws/lambda/bedrock-asset-processor.
+
+---
+
+## 🧹 Cleanup
+
+```bash
+# Destroy all AWS resources
 cd terraform
-terraform output -json > grading.json
-
-# STEP 10: Commit everything
+terraform destroy -auto-approve -var="db_password=$DB_PASSWORD"
 cd ..
-git add .
-git commit -m "Complete Project Bedrock deployment"
-git push
 ```
 
-This approach ensures:
+⚠️ **Important**: After destroy, you may need to manually release Elastic IPs and delete the S3 bucket if there are leftover versions. See the troubleshooting section.
 
-1. No conflicts between main.tf, vpc.tf, and eks.tf
-2. Clear process for getting database passwords and endpoints
-3. Simple merge of the cloned retail store app with your custom configurations
-4. Clear location for the ALB URL in your documentation
+---
 
-The deployment scripts handle the merge process automatically by:
+## 🛠️ Known Issues & Troubleshooting
 
-· Cloning the retail store app
-· Deploying only the application services
-· Removing in-cluster databases
-· Applying patches for managed AWS databases
-· Configuring all endpoints dynamically
+| **Symptom** | **Solution** |
+|-------------|--------------|
+| Pods stuck Pending with Too many pods | Increase desired_size in eks.tf to 8 or more; temporarily scale down fluentbit/redis/rabbitmq |
+| ALB not getting address | Verify LB controller ClusterRole has all necessary permissions, CRDs are installed, and controller pod is Running |
+| catalog/orders CrashLoopBackOff | Ensure ExternalName services catalog-db etc. exist and the database credentials (dbadmin) are correct |
+| "AccessDenied" for LB controller | Update the inline IAM policy to include elasticloadbalancing:AddTags, ec2:CreateSecurityGroup and others |
+| Lambda zip missing in CI | The workflow now packages the Lambda before Terraform apply |
+| Secrets Manager "scheduled for deletion" | Force‑delete the secret: aws secretsmanager delete-secret --secret-id project-bedrock-db-credentials --force-delete-without-recovery |
+
+---
+
+## 💰 Cost Reminder
+
+EKS clusters, NAT Gateways, RDS instances, and ALBs incur ongoing charges.
+**Tear down resources** when not actively developing (terraform destroy).
+The project uses 8 t3.micro nodes (Free Tier eligible, but combined usage may exceed free limits).
+
+---
+
+Built for the **InnovateMart** capstone – fully automated, secure, and production‑ready.
+
+```

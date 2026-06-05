@@ -123,6 +123,10 @@ for svc in rabbitmq redis checkout orders; do
 done
 sleep 5
 
+# Apply the required CRDs for the LB controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_targetgroupbindings.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_ingressclassparams.yaml
+
 # ------------------------------------------------------------------
 # 9. Install AWS Load Balancer Controller (no Terraform)
 # ------------------------------------------------------------------

@@ -100,12 +100,12 @@ resource "aws_eks_node_group" "main" {
   subnet_ids      = aws_subnet.private[*].id
   
   scaling_config {
-    desired_size = 8
-    max_size     = 10
+    desired_size = 3
+    max_size     = 5
     min_size     = 2
   }
   
-  instance_types = ["t3.micro"]
+  instance_types = ["t3.small"]
   
   update_config {
     max_unavailable = 1

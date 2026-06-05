@@ -3,7 +3,7 @@ Architecture Documentation
 
 High-Level Architecture
 
-[Architecture diagram and description]
+![alt text](architecture.png)
 
 Components
 

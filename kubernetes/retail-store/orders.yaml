@@ -15,14 +15,14 @@ spec:
     spec:
       containers:
       - name: orders
-        image: public.ecr.aws/aws-containers/retail-store-sample-orders:latest
+        image: public.ecr.aws/aws-containers/retail-store-sample-orders:0.4.0
         ports:
         - containerPort: 8080
         env:
         - name: SPRING_DATASOURCE_URL
           value: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
         - name: SPRING_DATASOURCE_USERNAME
-          value: "admin"
+          value: "dbadmin"
         - name: SPRING_DATASOURCE_PASSWORD
           value: "YourSecurePassword123!"
         resources:
