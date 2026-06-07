@@ -3,9 +3,15 @@ kind: ClusterRole
 metadata:
   name: aws-load-balancer-controller
 rules:
-- apiGroups: ["", "extensions", "networking.k8s.io", "coordination.k8s.io"]
-  resources: ["ingresses", "ingresses/status", "ingressclasses", "services", "endpoints", "nodes", "pods", "configmaps", "events", "secrets", "namespaces", "leases"]
+- apiGroups: [""]
+  resources: ["pods", "services", "endpoints", "nodes", "configmaps", "events", "secrets", "namespaces"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["", "extensions", "networking.k8s.io"]
+  resources: ["ingresses", "ingresses/status", "ingressclasses"]
+  verbs: ["get", "list", "watch", "create", "update", "patch"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
   verbs: ["get", "list", "watch", "create", "update", "patch"]
 - apiGroups: ["elbv2.k8s.aws"]
-  resources: ["targetgroupbindings", "ingressclassparams"]
+  resources: ["targetgroupbindings", "targetgroupbindings/status", "ingressclassparams"]
   verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

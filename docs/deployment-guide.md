@@ -59,50 +59,62 @@ cd PROJECT-BEDROCK
 2. Repository Structure
 
 ```
-PROJECT-BEDROCK/
-├── .github/
-│   └── workflows/
-│       ├── terraform-plan.yml          # PR workflow: terraform plan
-│       ├── terraform-apply.yml         # Merge workflow: terraform apply
-│       └── deploy-app.yaml             # App deployment workflow
-├── kubernetes/
+├── .github/workflows/          # CI/CD pipelines
+│   ├── deploy-app.yaml         # Deploys application to EKS
+│   ├── terraform-apply.yml     # Runs on merge to main, applies infrastructure
+│   ├── terraform-destroy.yml   # Run manually, delete infrastructure
+│   └── terraform-plan.yml      # Runs on PR, posts plan
+│
+├── docs/                     # Documentation
+│   ├── architecture.md
+│   ├── architecture.png
+│   └── deployment-guide.md
+│
+├── kubernetes/                 # Application manifests & RBAC
 │   ├── helm/
 │   │   └── values.yaml                 # Helm values for managed databases
+│   ├── observability/
+│   │   └── fluentbit.yaml      # FluentBit DaemonSet (optional)
 │   ├── rbac/
-│   │   ├── dev-view-role.yaml          # Developer read-only RBAC
-│   │   └── aws-load-balancer-controller-clusterrole.yaml
-│   ├── retail-store/
-│   │   └── ingress.yaml                # ALB Ingress configuration
-│   └── observability/
-│       └── fluentbit.yaml              # Fluent Bit for CloudWatch logs
-├── scripts/
-│   ├── deploy-app.sh                   # Main deployment script
-│   ├── setup-credentials.sh            # Database password setup
-│   └── get-endpoints.sh                # Fetch infrastructure endpoints
-├── terraform/
-│   ├── main.tf                         # Provider configs, Secrets Manager, IAM
-│   ├── vpc.tf                          # VPC, subnets, NAT, IGW
-│   ├── eks.tf                          # EKS cluster, node groups, add-ons
-│   ├── rds.tf                          # RDS MySQL and PostgreSQL
-│   ├── dynamodb.tf                     # DynamoDB table
-│   ├── s3.tf                           # S3 assets bucket
-│   ├── lambda.tf                       # Lambda function and trigger
-│   ├── iam.tf                          # IAM users and policies
-│   ├── variables.tf                    # All variables
-│   ├── outputs.tf                      # All outputs
-│   ├── versions.tf                     # Provider versions
-│   ├── backend.tf                      # S3 backend configuration
-│   └── remote-state.tf                 # S3 bucket for state
-├── lambda/
+│   │   ├── aws-load-balancer-controller-clusterrole
+│   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
+│   └── retail-store/           # Ingress 
+│       └── ingress.yaml
+│   
+├── lambda/                     # Lambda function source
 │   └── bedrock-asset-processor/
-│       └── index.py                    # Lambda function code
-├── docs/
-│   ├── architecture.png                # Architecture diagram
-│   ├── architecture.md                 # Architecture documentation
-│   └── deployment-guide.md             # This file
+│       ├── index.py
+│       └── requirements.txt
+├── retail-store-app-charts/                  # Helm values for retail store app
+│   ├── backend.tf              # S3 remote state
+│   ├── dynamodb.tf
+│   ├── eks.tf
+│   ├── iam.tf
+│   ├── lambda.tf
+│
+├── scripts/                     # Automation scripts
+│   ├── deploy-app.sh            # Main application deployment script
+│   ├── get-endpoints.sh                # Fetch infrastructure endpoints
+│   └── generate-grading-json.sh # Generate grading.json file
+│
+├── terraform/                  # IaC – VPC, EKS, RDS, IAM, S3, Lambda, etc.
+│   ├── backend.tf              # S3 remote state
+│   ├── dynamodb.tf
+│   ├── eks.tf
+│   ├── iam.tf
+│   ├── lambda.tf
+│   ├── main.tf                 # Provider, secrets, IAM, LB controller
+│   ├── outputs.tf
+│   ├── rds.tf
+│   ├── remote-state.tf         # (not used; bucket created manually)
+│   ├── s3.tf
+│   ├── variables.tf
+│   ├── versions.tf
+│   └── vpc.tf
+│
 ├── .gitignore
-├── grading.json                        # Terraform outputs (generated)
-└── README.md
+├── grading.json              # Generated after deployment
+└── README.md               
 ```
 
 3. Configure Variables
