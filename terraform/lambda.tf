@@ -33,7 +33,7 @@ resource "aws_lambda_function" "asset_processor" {
   role            = aws_iam_role.lambda.arn
   handler         = "index.handler"
   runtime         = "python3.11"
-  source_code_hash = filebase64sha256("../lambda/bedrock-asset-processor.zip")
+  # source_code_hash = filebase64sha256("../lambda/bedrock-asset-processor.zip")
   
   environment {
     variables = {
