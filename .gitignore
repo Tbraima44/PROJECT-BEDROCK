@@ -46,4 +46,3 @@ credentials
 
 kubeconfig
 *.kubeconfig
-retail-store-sample-app/

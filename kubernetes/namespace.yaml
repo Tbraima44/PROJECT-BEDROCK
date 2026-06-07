@@ -1,7 +1,0 @@
-# retail-app namespace definition
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: retail-app
-  labels:
-    name: retail-app

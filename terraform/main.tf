@@ -41,6 +41,7 @@ data "tls_certificate" "eks" {
 resource "aws_secretsmanager_secret" "db_credentials" {
   name        = "project-bedrock-db-credentials"
   description = "Database credentials for retail store application"
+  recovery_window_in_days = 0   # <-- Force immediate deletion on destroy
   
   tags = {
     Name    = "project-bedrock-db-credentials"

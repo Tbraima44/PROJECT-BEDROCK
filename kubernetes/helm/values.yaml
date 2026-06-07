@@ -1,0 +1,49 @@
+# =============================================================================
+# Retail Store Sample App - Helm Values
+# =============================================================================
+# This file overrides the default chart values to use managed AWS services
+# instead of in-cluster databases.
+# =============================================================================
+
+# Disable all in-cluster databases
+mysql:
+  enabled: false
+postgresql:
+  enabled: false
+dynamodb:
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# Cart Service - MySQL RDS
+# ---------------------------------------------------------------------------
+carts:
+  datasource:
+    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "admin"
+    password: "YourSecurePassword123!"
+
+# ---------------------------------------------------------------------------
+# Catalog Service - MySQL RDS
+# ---------------------------------------------------------------------------
+catalog:
+  datasource:
+    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "admin"
+    password: "YourSecurePassword123!"
+
+# ---------------------------------------------------------------------------
+# Orders Service - MySQL RDS
+# ---------------------------------------------------------------------------
+orders:
+  datasource:
+    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "admin"
+    password: "YourSecurePassword123!"
+
+# ---------------------------------------------------------------------------
+# Checkout Service - DynamoDB
+# ---------------------------------------------------------------------------
+checkout:
+  dynamodb:
+    tableName: "project-bedrock-retail-store"
+    region: "us-east-1"

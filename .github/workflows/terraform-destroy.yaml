@@ -1,0 +1,81 @@
+name: Terraform Destroy
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_destroy:
+        description: 'Type "DESTROY" to confirm infrastructure teardown'
+        required: true
+        default: ''
+        type: string
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  terraform-destroy:
+    runs-on: ubuntu-latest
+    # Only run if the user typed "DESTROY" exactly
+    if: ${{ github.event.inputs.confirm_destroy == 'DESTROY' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+      
+      - name: Terraform Init
+        working-directory: terraform
+        run: terraform init
+      
+      - name: Terraform Destroy
+        working-directory: terraform
+        run: terraform destroy -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
+        env:
+          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      
+      - name: Notify destruction complete
+        run: |
+          echo "## 🔥 Terraform Destroy Complete" >> $GITHUB_STEP_SUMMARY
+          echo "**All AWS resources have been destroyed.**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- VPC, Subnets, Internet Gateway, NAT Gateway" >> $GITHUB_STEP_SUMMARY
+          echo "- EKS Cluster and Node Groups" >> $GITHUB_STEP_SUMMARY
+          echo "- RDS MySQL and PostgreSQL instances" >> $GITHUB_STEP_SUMMARY
+          echo "- DynamoDB Table" >> $GITHUB_STEP_SUMMARY
+          echo "- S3 Buckets" >> $GITHUB_STEP_SUMMARY
+          echo "- Lambda Function" >> $GITHUB_STEP_SUMMARY
+          echo "- IAM Roles and Policies" >> $GITHUB_STEP_SUMMARY
+          echo "- Secrets Manager secrets" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> ⚠️ To rebuild, push a change to the \`terraform/\` directory or run the **Terraform Apply** workflow." >> $GITHUB_STEP_SUMMARY
+  
+  skip-confirmation:
+    runs-on: ubuntu-latest
+    # Run if the user did NOT type "DESTROY"
+    if: ${{ github.event.inputs.confirm_destroy != 'DESTROY' }}
+    steps:
+      - name: Destruction aborted
+        run: |
+          echo "## ⚠️ Terraform Destroy - ABORTED" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You must type **DESTROY** (exactly, all caps) in the confirmation field to proceed." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "No resources were modified." >> $GITHUB_STEP_SUMMARY

@@ -1,4 +1,3 @@
-# Application deployment workflow
 name: Deploy Application
 
 on:
@@ -9,7 +8,13 @@ on:
       - 'kubernetes/**'
       - 'lambda/**'
       - 'scripts/**'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_run:
+    workflows: ["Terraform Apply"]
+    types:
+      - completed
+    branches:
+      - main
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
@@ -18,6 +23,10 @@ env:
 
 jobs:
   deploy-application:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     
     steps:
@@ -36,7 +45,7 @@ jobs:
         with:
           version: 'latest'
       
-      - name: Install Helm (if not already present)
+      - name: Install Helm
         run: |
           curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
       
@@ -44,3 +53,8 @@ jobs:
         run: |
           chmod +x scripts/deploy-app.sh
           ./scripts/deploy-app.sh
+      
+      - name: Output ALB URL
+        run: |
+          ALB_URL=$(kubectl get ingress retail-store-ingress -n retail-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "Application URL: http://$ALB_URL"
