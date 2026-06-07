@@ -22,8 +22,8 @@
 
 ### Local Machine Requirements
 
-| Tool | Version | Installation |
-|------|---------|--------------|
+| **Tool** | **Version** | **Installation** |
+|--------------|--------------|--------------|
 | **AWS CLI** | >= 2.0 | `pip install awscli` or [AWS Docs](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) |
 | **Terraform** | >= 1.5.0 | `brew install terraform` or [Terraform Downloads](https://developer.hashicorp.com/terraform/downloads) |
 | **kubectl** | >= 1.28 | `brew install kubectl` or [Kubernetes Docs](https://kubernetes.io/docs/tasks/tools/) |
@@ -40,23 +40,23 @@
   # Enter Access Key ID, Secret Access Key, region: us-east-1, output: json
   ```
 
-GitHub Requirements
+###   GitHub Requirements
 
 - GitHub account with repository access
 - Repository secrets configured (see CI/CD Pipeline Setup)
 
 ---
 
-Repository Setup
+##   Repository Setup
 
-1. Clone the Repository
+1. **Clone the Repository**
 
 ```bash
 git clone https://github.com/Tbraima44/PROJECT-BEDROCK.git
 cd PROJECT-BEDROCK
 ```
 
-2. Repository Structure
+2. **Repository Structure**
 
 ```
 ├── .github/workflows/          # CI/CD pipelines
@@ -73,28 +73,27 @@ cd PROJECT-BEDROCK
 ├── kubernetes/                 # Application manifests & RBAC
 │   ├── helm/
 │   │   └── values.yaml                 # Helm values for managed databases
-│   ├── observability/
-│   │   └── fluentbit.yaml      # FluentBit DaemonSet (optional)
 │   ├── rbac/
 │   │   ├── aws-load-balancer-controller-clusterrole
 │   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
-│   └── retail-store/           # Ingress 
+│   └── retail-store/           # Ingress
+│       ├── db-external-services.yaml   # Keep for reference, Helm managed DB
 │       └── ingress.yaml
 │   
 ├── lambda/                     # Lambda function source
 │   └── bedrock-asset-processor/
 │       ├── index.py
 │       └── requirements.txt
-├── retail-store-app-charts/                  # Helm values for retail store app
-│   ├── backend.tf              # S3 remote state
-│   ├── dynamodb.tf
-│   ├── eks.tf
-│   ├── iam.tf
-│   ├── lambda.tf
+│
+├── retail-store-app-charts/    # Helm charts for the Retail Store App 
+│   ├── cart/**              
+│   ├── catalog/**
+│   ├── checkout/**
+│   ├── orders/**
+│   ├── ui/**
 │
 ├── scripts/                     # Automation scripts
 │   ├── deploy-app.sh            # Main application deployment script
-│   ├── get-endpoints.sh                # Fetch infrastructure endpoints
 │   └── generate-grading-json.sh # Generate grading.json file
 │
 ├── terraform/                  # IaC – VPC, EKS, RDS, IAM, S3, Lambda, etc.
@@ -117,7 +116,7 @@ cd PROJECT-BEDROCK
 └── README.md               
 ```
 
-3. Configure Variables
+3. **Configure Variables**
 
 Edit terraform/terraform.tfvars:
 
@@ -136,9 +135,9 @@ chmod +x scripts/setup-credentials.sh
 
 ---
 
-Infrastructure Deployment
+## Infrastructure Deployment
 
-Step 1: Create Remote State S3 Bucket
+### Step 1: Create Remote State S3 Bucket
 
 ```bash
 aws s3api create-bucket \
@@ -154,38 +153,38 @@ aws s3api put-bucket-encryption \
   --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
 ```
 
-Step 2: Initialize Terraform
+### Step 2: Initialize Terraform
 
 ```bash
 cd terraform
 terraform init
 ```
 
-Step 3: Review the Plan
+### Step 3: Review the Plan
 
 ```bash
 terraform plan -var="db_password=YourSecurePassword123!"
 ```
 
-Review the output carefully. You should see:
+**Review** the output carefully. You should see:
 
-· VPC with public/private subnets
-· EKS cluster with 3 t3.small nodes
-· RDS MySQL and PostgreSQL instances
-· DynamoDB table
-· S3 bucket
-· Lambda function
-· IAM roles and users
+- VPC with public/private subnets
+- EKS cluster with 3 t3.small nodes
+- RDS MySQL and PostgreSQL instances
+- DynamoDB table
+- S3 bucket
+- Lambda function
+- IAM roles and users
 
-Step 4: Apply Infrastructure
+### Step 4: Apply Infrastructure
 
 ```bash
 terraform apply -auto-approve -var="db_password=YourSecurePassword123!"
 ```
 
-Expected time: 15-25 minutes
+**Expected time:** 15-25 minutes
 
-Step 5: Verify Infrastructure
+### Step 5: Verify Infrastructure
 
 ```bash
 # Check Terraform outputs
@@ -198,7 +197,7 @@ aws eks update-kubeconfig --region us-east-1 --name project-bedrock-cluster
 kubectl get nodes
 ```
 
-Expected output:
+**Expected output:**
 
 ```
 NAME                          STATUS   ROLES    AGE   VERSION
@@ -209,9 +208,9 @@ ip-10-0-12-xxx.ec2.internal   Ready    <none>   5m    v1.34.8-eks-3385e9b
 
 ---
 
-Application Deployment
+##  Application Deployment
 
-Option 1: Automated Deployment (Recommended)
+### Option 1: Automated Deployment (Recommended)
 
 Run the deployment script:
 
@@ -220,7 +219,7 @@ cd /path/to/PROJECT-BEDROCK
 ./scripts/deploy-app.sh
 ```
 
-This script automatically:
+**This script automatically:**
 
 1. Updates kubeconfig
 2. Creates the retail-app namespace

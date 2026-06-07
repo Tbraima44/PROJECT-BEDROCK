@@ -40,6 +40,47 @@ jobs:
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.0
+
+      - name: Pre-cleanup - Delete ALBs
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            ALB_ARNS=$(aws elbv2 describe-load-balancers --region $AWS_REGION --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
+            for arn in $ALB_ARNS; do
+              echo "Deleting ALB: $arn"
+              aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region $AWS_REGION
+            done
+          fi
+
+      - name: Pre-cleanup - Delete NAT Gateways
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            NGW_IDS=$(aws ec2 describe-nat-gateways --region $AWS_REGION --filter "Name=vpc-id,Values=$VPC_ID" --query 'NatGateways[*].NatGatewayId' --output text)
+            for ngw in $NGW_IDS; do
+              echo "Deleting NAT Gateway: $ngw"
+              aws ec2 delete-nat-gateway --nat-gateway-id "$ngw" --region $AWS_REGION || true
+            done
+            # Wait for NAT Gateways to delete
+            for ngw in $NGW_IDS; do
+              echo "Waiting for NAT Gateway $ngw to delete..."
+              aws ec2 wait nat-gateway-deleted --nat-gateway-ids "$ngw" --region $AWS_REGION || true
+            done
+          fi 
+          
+      - name: Pre-cleanup - Release Elastic IPs
+        run: |
+          ALLOC_IDS=$(aws ec2 describe-addresses --region $AWS_REGION --query 'Addresses[?AssociationId==null].AllocationId' --output text)
+          for alloc in $ALLOC_IDS; do
+            echo "Releasing EIP: $alloc"
+            aws ec2 release-address --allocation-id "$alloc" --region $AWS_REGION || true
+          done
+          
+      - name: Package Lambda function
+        run: |
+          cd lambda/bedrock-asset-processor
+          zip -r ../bedrock-asset-processor.zip index.py
+          cd ../..    
       
       - name: Terraform Init
         working-directory: terraform

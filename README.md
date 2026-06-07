@@ -1,11 +1,7 @@
-Here's a comprehensive README for Project Bedrock:
-
-```markdown
 # 🏗️ Project Bedrock - InnovateMart EKS Deployment
 
 **Production-Grade Microservices on AWS EKS**
 
-![Architecture](docs/architecture.png)
 
 ---
 
@@ -23,7 +19,6 @@ Here's a comprehensive README for Project Bedrock:
 - [Serverless Extension](#serverless-extension)
 - [Developer Access](#developer-access)
 - [Cleanup](#cleanup)
-- [Grading Deliverables](#grading-deliverables)
 
 ---
 
@@ -52,47 +47,70 @@ This project provisions a secure Amazon EKS cluster, deploys the AWS Retail Stor
 
 ## Architecture
 
-```
-
-Developer              │  ┌────────────────────────────────────┐  │
-(bedrock-dev-view)     │  │  VPC (project-bedrock-vpc)         │  │
-│                 │  │                                    │  │
-▼                 │  │  Public Subnets                    │  │
-┌─────────┐            │  │  ┌──────────┐  ┌──────────────┐   │  │
-│  ALB    │◄───────────┼──┼──►  ALB     │  │  NAT Gateway │   │  │
-└─────────┘            │  │  └──────────┘  └──────────────┘   │  │
-│  │                                    │  │
-│  │  Private Subnets (3 nodes)         │  │
-│  │  ┌──────────────────────────────┐  │  │
-│  │  │  EKS Cluster                 │  │  │
-│  │  │  ┌────┐ ┌────┐ ┌─────────┐  │  │  │
-│  │  │  │ UI │ │Cart│ │Catalog  │  │  │  │
-│  │  │  └────┘ └────┘ └─────────┘  │  │  │
-│  │  │  ┌────────┐ ┌──────────┐    │  │  │
-│  │  │  │Orders  │ │Checkout  │    │  │  │
-│  │  │  └────────┘ └──────────┘    │  │  │
-│  │  └──────────────────────────────┘  │  │
-│  │                                    │  │
-│  │  ┌──────────────────────────────┐  │  │
-│  │  │  Managed Data Layer          │  │  │
-│  │  │  ┌─────────┐ ┌───────────┐  │  │  │
-│  │  │  │RDS MySQL│ │ DynamoDB  │  │  │  │
-│  │  │  └─────────┘ └───────────┘  │  │  │
-│  │  └──────────────────────────────┘  │  │
-│  └────────────────────────────────────┘  │
-│                                          │
-│  ┌────────────────────────────────────┐  │
-│  │  Serverless Extension              │  │
-│  │  ┌──────────┐    ┌──────────────┐ │  │
-│  │  │ S3 Bucket│───►│   Lambda     │ │  │
-│  │  │ (assets) │    │ (processor)  │ │  │
-│  │  └──────────┘    └──────────────┘ │  │
-│  └────────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-
-```
+![Architecture](docs/architecture.png)
 
 ---
+
+## 📁 Repository Structure
+
+```
+├── .github/workflows/          # CI/CD pipelines
+│   ├── deploy-app.yaml         # Deploys application to EKS
+│   ├── terraform-apply.yml     # Runs on merge to main, applies infrastructure
+│   ├── terraform-destroy.yml   # Run manually, delete infrastructure
+│   └── terraform-plan.yml      # Runs on PR, posts plan
+│
+├── docs/                     # Documentation
+│   ├── architecture.md
+│   ├── architecture.png
+│   └── deployment-guide.md
+│
+├── kubernetes/                 # Application manifests & RBAC
+│   ├── helm/
+│   │   └── values.yaml                 # Helm values for managed databases
+│   ├── rbac/
+│   │   ├── aws-load-balancer-controller-clusterrole
+│   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
+│   └── retail-store/           # Ingress
+│       ├── db-external-services.yaml   # Keep for reference, Helm managed DB
+│       └── ingress.yaml
+│   
+├── lambda/                     # Lambda function source
+│   └── bedrock-asset-processor/
+│       ├── index.py
+│       └── requirements.txt
+│
+├── retail-store-app-charts/    # Helm charts for the Retail Store App 
+│   ├── cart/**              
+│   ├── catalog/**
+│   ├── checkout/**
+│   ├── orders/**
+│   ├── ui/**
+│
+├── scripts/                     # Automation scripts
+│   ├── deploy-app.sh            # Main application deployment script
+│   └── generate-grading-json.sh # Generate grading.json file
+│
+├── terraform/                  # IaC – VPC, EKS, RDS, IAM, S3, Lambda, etc.
+│   ├── backend.tf              # S3 remote state
+│   ├── dynamodb.tf
+│   ├── eks.tf
+│   ├── iam.tf
+│   ├── lambda.tf
+│   ├── main.tf                 # Provider, secrets, IAM, LB controller
+│   ├── outputs.tf
+│   ├── rds.tf
+│   ├── remote-state.tf         # (not used; bucket created manually)
+│   ├── s3.tf
+│   ├── variables.tf
+│   ├── versions.tf
+│   └── vpc.tf
+│
+├── .gitignore
+├── grading.json              # Generated after deployment
+└── README.md               
+```
+
 
 ## Prerequisites
 
@@ -102,6 +120,20 @@ Developer              │  ┌────────────────�
 - **Helm** >= 3.12
 - **jq** (JSON processor)
 - **GitHub account** with repository secrets configured
+
+### AWS Requirements
+
+- AWS account with AdministratorAccess
+- AWS CLI configured:
+  ```bash
+  aws configure
+  # Access Key ID, Secret Access Key, region: us-east-1, output: json
+  ```
+
+### GitHub Requirements
+
+- GitHub repository with Actions enabled
+- Repository secrets configured (see CI/CD Pipeline)
 
 ---
 
@@ -114,7 +146,7 @@ git clone https://github.com/Tbraima44/PROJECT-BEDROCK.git
 cd PROJECT-BEDROCK
 ```
 
-2. Configure Database Password
+### 2. Configure Database Password
 
 ```bash
 chmod +x scripts/setup-credentials.sh
@@ -123,7 +155,7 @@ chmod +x scripts/setup-credentials.sh
 
 Edit terraform/terraform.tfvars and set your student_id.
 
-3. Create Remote State Bucket (if not exists)
+### 3. Create Remote State Bucket (if not exists)
 
 ```bash
 aws s3api create-bucket \
@@ -131,7 +163,7 @@ aws s3api create-bucket \
   --region us-east-1
 ```
 
-4. Deploy Infrastructure
+### 4. Deploy Infrastructure
 
 ```bash
 cd terraform
@@ -140,16 +172,17 @@ terraform plan -var="db_password=YourSecurePassword123!"
 terraform apply -auto-approve -var="db_password=YourSecurePassword123!"
 cd ..
 ```
+**Expected time:** 15-25 minutes
 
-5. Deploy Application
+### 5. Deploy Application
 
 ```bash
 ./scripts/deploy-app.sh
 ```
 
-6. Access the Store
+### 6. Access the Store
 
-Get the ALB URL:
+**Get the ALB URL:**
 
 ```bash
 kubectl get ingress -n retail-app
@@ -159,85 +192,89 @@ Open the ADDRESS in your browser.
 
 ---
 
-Infrastructure Details
+##  Infrastructure Details
 
-VPC Configuration
+### VPC Configuration
 
-Resource Details
-VPC Name project-bedrock-vpc
-CIDR 10.0.0.0/16
-Public Subnets 2 (across AZs)
-Private Subnets 2 (across AZs)
-NAT Gateway 1
+| **Resource** | **Details** |
+|--------------|-------------|
+| **VPC Name** | project-bedrock-vpc|
+| **CIDR** | 10.0.0.0/16 |
+| **Public Subnets** | 2 (across AZs) |
+| **Private Subnets** | 2 (across AZs) |
+| **NAT Gateway** | 1 |
 
-EKS Cluster
+### EKS Cluster
 
-Resource Details
-Cluster Name project-bedrock-cluster
-Kubernetes Version 1.34
-Instance Type t3.small (2 vCPU, 2 GiB)
-Node Count 3 (max 5, min 2)
-Pod Capacity ~33 pods (11 per node)
+| **Resource** | **Details** |
+|--------------|-------------|
+| **Cluster Name** | project-bedrock-cluster |
+| **Kubernetes Version** | 1.34 |
+| **Instance Type** | t3.small (2 vCPU, 2 GiB) |
+| **Node Count** | 3 (max 5, min 2) |
+| **Pod Capacity** | ~33 pods (11 per node)|
 
-Managed Databases
+### Managed Databases
 
-Service Engine Endpoint Purpose
-RDS MySQL MySQL 8.0 project-bedrock-mysql.*.rds.amazonaws.com Carts, Catalog, Orders
-DynamoDB DynamoDB project-bedrock-retail-store Checkout
+| **Service** | **Engine** | **Purpose** |
+|------------|------------|------------|
+| **RDS MySQL** | MySQL 8.0 | Carts, Catalog, Orders |
+| **DynamoDB** | DynamoDB | Checkout |
 
-Other Resources
+### Other Resources
 
-Resource Name
-S3 Bucket bedrock-assets-YOUR-STUDENT-ID
-Lambda bedrock-asset-processor
-Secrets Manager project-bedrock-db-credentials
-IAM User bedrock-dev-view
+| **Resource** | **Name** |
+|--------------|-------------|
+| **S3 Bucket** | bedrock-assets-YOUR-STUDENT-ID |
+| **Lambda** | bedrock-asset-processor |
+| **Secrets Manager** | project-bedrock-db-credentials |
+| **IAM User** | bedrock-dev-view |
 
 ---
 
-Application Deployment
+##  Application Deployment
 
-Helm-Based Deployment (Bonus Objective)
+### Helm-Based Deployment
 
-The retail store application is deployed using the official Helm charts from the retail-store-sample-app repository.
+The retail store application is deployed using **Helm charts** with a custom `values.yaml` that disables in-cluster databases and points to managed AWS services.
 
-Values file: kubernetes/helm/values.yaml
+**Values file:** kubernetes/helm/values.yaml
 
 ```yaml
 mysql:
-  enabled: false          # Disable in-cluster MySQL
+  enabled: false
 dynamodb:
-  enabled: false          # Disable in-cluster DynamoDB
+  enabled: false
 
 carts:
   datasource:
     url: "jdbc:mysql://RDS_ENDPOINT:3306/retaildb"
     username: "admin"
     password: "YourSecurePassword123!"
-# ... similar for catalog, orders, checkout
-```
+# ... similar for catalog, orders, checkout```
 
-Single command deployment:
+**Single command deployment:**
 
 ```bash
 helm upgrade --install carts ./retail-store-sample-app/src/cart/chart/ \
   --namespace retail-app --values kubernetes/helm/values.yaml
 ```
 
-All services (carts, catalog, orders, checkout, ui) are deployed with the same pattern.
+All **services** (carts, catalog, orders, checkout, ui) are deployed with the same pattern.
 
-Services
+### Services
 
-Service Database Helm Chart
-UI N/A src/ui/chart/
-Carts RDS MySQL src/cart/chart/
-Catalog RDS MySQL src/catalog/chart/
-Orders RDS MySQL src/orders/chart/
-Checkout DynamoDB src/checkout/chart/
-RabbitMQ In-cluster Built-in
-Redis In-cluster Built-in
+| **Service** | **Database** | **Helm Chart** |
+|------------|------------|------------| 
+| **UI** | N/A | retail-store-app-charts/ui/chart/ |
+| **Carts** | RDS MySQL | retail-store-app-charts/cart/chart/ |
+| **Catalog** | RDS MySQL | retail-store-app-charts/catalog/chart/ |
+| **Orders** | RDS MySQL | retail-store-app-charts/orders/chart/ |
+| **Checkout** | DynamoDB | retail-store-app-charts/checkout/chart/ |
+| **RabbitMQ** | In-cluster | Built-in |
+| **Redis** | In-cluster | Built-in |
 
-Ingress
+### Ingress
 
 An Application Load Balancer (ALB) is provisioned via the AWS Load Balancer Controller:
 
@@ -247,79 +284,102 @@ kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 ---
 
-CI/CD Pipeline
+##  CI/CD Pipeline
 
-GitHub Actions Workflows
+### GitHub Actions Workflows
 
-Workflow Trigger Action
-Terraform Plan Pull Request to main (paths: terraform/**) Runs terraform plan, posts output as PR comment
-Terraform Apply Push to main (paths: terraform/**) Runs terraform apply -auto-approve
-Deploy Application Push to main (paths: kubernetes/**, lambda/**, scripts/**) or after Terraform Apply Runs deploy-app.sh
+| **Workflow** | **Trigger** | **Action** |
+|--------------|-------------|------------|
+|**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
+| **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
+| **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/**) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
 
-Required GitHub Secrets
+After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
 
-Secret Description
-AWS_ACCESS_KEY_ID AWS IAM user access key
-AWS_SECRET_ACCESS_KEY AWS IAM user secret key
-DB_PASSWORD Database password for RDS
+### Required GitHub Secrets
 
----
+| **Secret** | **Description** |
+|--------------|-------------| 
+| **AWS_ACCESS_KEY_ID** | AWS IAM user access key |
+| **AWS_SECRET_ACCESS_KEY** | AWS IAM user secret key |
+| **DB_PASSWORD** | Database password for RDS |
 
-Security
+## Triggering the Pipeline
 
-IAM
+### Terraform Plan:
 
-· EKS Cluster Role: AmazonEKSClusterPolicy, AmazonEKSVPCResourceController
-· EKS Node Role: AmazonEKSWorkerNodePolicy, AmazonEKS_CNI_Policy, AmazonEC2ContainerRegistryReadOnly
-· LB Controller Role: Custom inline policy with ELB, EC2, and IAM permissions (IRSA)
-· Developer User (bedrock-dev-view): ReadOnlyAccess + s3:PutObject on assets bucket
+```bash
+git checkout -b test-terraform
+echo "# test" >> terraform/main.tf
+git add terraform/main.tf
+git commit -m "Test plan"
+git push -u origin test-terraform
+# Create a PR on GitHub
+```
 
-Kubernetes RBAC
+**Terraform Apply:** Merge the PR to `main`.
 
-· Developer user mapped to view ClusterRole (read-only across all namespaces)
-· AWS LB Controller has dedicated ClusterRole with ingress and target group binding permissions
-
-Secrets Management
-
-· Database credentials stored in AWS Secrets Manager
-· Never hardcoded in source files committed to repository
-· grading.json excluded from Git via .gitignore
-
-Network Security
-
-· RDS instances in private subnets
-· Security groups restrict database access to EKS node/pod CIDR only
-· ALB in public subnets with internet-facing scheme
+**Deploy Application:** Push changes to `kubernetes/`, `lambda/`, or `scripts/`.
 
 ---
 
-Observability
+##  Security
 
-CloudWatch Logs
+### IAM
 
-· Control plane logs: API, Audit, Authenticator, ControllerManager, Scheduler
-· Application logs: Fluent Bit DaemonSet ships container logs to CloudWatch
-· Lambda logs: /aws/lambda/bedrock-asset-processor
+- **EKS Cluster Role:** `AmazonEKSClusterPolicy, AmazonEKSVPCResourceController`
+- **EKS Node Role:** `AmazonEKSWorkerNodePolicy, AmazonEKS_CNI_Policy, AmazonEC2ContainerRegistryReadOnly`
+- **LB Controller Role:** Custom inline policy with ELB, EC2, and IAM permissions (IRSA)
+- **Developer User (bedrock-dev-view):** `ReadOnlyAccess + s3:PutObject` on assets bucket
+
+###  Kubernetes RBAC
+
+- Developer user mapped to view ClusterRole (read-only across all namespaces)
+- AWS LB Controller has dedicated ClusterRole with ingress and target group binding permissions
+
+### Secrets Management
+
+- Database credentials stored in AWS Secrets Manager
+- Never hardcoded in source files committed to repository
+
+### Network Security
+
+- RDS instances in private subnets
+- Security groups restrict database access to EKS node/pod CIDR only
+- ALB in public subnets with internet-facing scheme
+
+---
+
+##  Observability
+
+### CloudWatch Logs
+
+- **Control plane logs:** API, Audit, Authenticator, ControllerManager, Scheduler
+- **Application logs:** Fluent Bit DaemonSet ships container logs to CloudWatch
+- **Lambda logs:** /aws/lambda/bedrock-asset-processor
 
 View Logs
 
 ```bash
-# Control plane logs
+# Control plane
 aws logs tail /aws/eks/project-bedrock-cluster/cluster --follow
 
-# Application logs
+# Application
 aws logs tail /aws/containerinsights/project-bedrock-cluster/application --follow
+
+# Specific pod
+kubectl logs -n retail-app deployment/catalog --tail=50 -f
 ```
 
 ---
 
-Serverless Extension
+##  Serverless Extension
 
-S3 → Lambda Trigger
+### S3 → Lambda Trigger
 
 When a file is uploaded to bedrock-assets-YOUR-STUDENT-ID, the Lambda function bedrock-asset-processor is triggered.
 
-Lambda code:
+**Lambda code:** lambda/bedrock-asset-processor/index.py
 
 ```python
 def handler(event, context):
@@ -329,49 +389,60 @@ def handler(event, context):
     return {'statusCode': 200, 'body': f'Successfully processed {key}'}
 ```
 
-Test:
+**Test:**
 
 ```bash
 echo "test image" > test.jpg
 aws s3 cp test.jpg s3://bedrock-assets-YOUR-STUDENT-ID/ --profile bedrock-dev
+# Check CloudWatch Logs for the Lambda function to see the log entry.
 ```
-
-Check CloudWatch Logs for the Lambda function to see the log entry.
 
 ---
 
-Developer Access
+##  Developer Access
 
-IAM User: bedrock-dev-view
+**IAM User:** bedrock-dev-view
 
-Access Level Details
-AWS Console ReadOnlyAccess managed policy
-S3 s3:PutObject on bedrock-assets-* bucket
-Kubernetes view ClusterRole (read-only)
+| **Access** | **Details** |
+|--------------|-------------| 
+| **AWS Console** | `ReadOnlyAccess` |
+| **S3** | `s3:PutObject` on bedrock-assets-* bucket|
+| **Kubernetes** | `view` ClusterRole (read-only) |
 
-Configure Developer Profile
+### Configure Developer Profile
 
 ```bash
+# Get credentials
+cd terraform
+terraform output -raw dev_user_access_key
+terraform output -raw dev_user_secret_key
+cd ..
+
+# Configure profile
 aws configure --profile bedrock-dev
+
+# Update kubeconfig
 aws eks update-kubeconfig --name project-bedrock-cluster --profile bedrock-dev --region us-east-1
 
-# Test read access
-kubectl get pods -n retail-app          # ✅ Succeeds
-kubectl delete pod <name> -n retail-app # ❌ Forbidden
+# Test (should succeed)
+kubectl get pods -n retail-app
+
+# Test (should fail with Forbidden)
+kubectl delete pod -n retail-app <any-pod>
 ```
 
 ---
 
-Cleanup
+##  Cleanup
 
-Delete Application Resources
+### Delete Application Resources
 
 ```bash
 helm uninstall carts catalog orders checkout ui -n retail-app
 kubectl delete namespace retail-app
 ```
 
-Destroy Infrastructure
+##  Destroy Infrastructure
 
 ```bash
 cd terraform
@@ -379,24 +450,11 @@ terraform destroy -auto-approve -var="db_password=YourSecurePassword123!"
 cd ..
 ```
 
-⚠️ Note: You may need to manually delete the ALB, release Elastic IPs, and delete network interfaces before Terraform destroy can complete. See troubleshooting section if destroy fails.
+⚠️ **Note:** You may need to manually delete the ALB, release Elastic IPs, and delete network interfaces before Terraform destroy can complete. See troubleshooting section if destroy fails.
 
 ---
 
-Grading Deliverables
-
-Deliverable Status
-Git Repository ✅ This repository
-Architecture Diagram ✅ docs/architecture.png
-Deployment Guide ✅ This README
-Grading JSON ✅ grading.json (submitted separately)
-Developer Credentials ✅ bedrock-dev-view IAM user
-Resource Tagging ✅ All resources tagged Project: karatu-2025-capstone
-Remote State ✅ S3 backend with encryption
-CI/CD Pipeline ✅ GitHub Actions workflows
-Helm Deployment ✅ kubernetes/helm/values.yaml
-
-Generating grading.json
+### Generating grading.json
 
 ```bash
 cd terraform
@@ -405,9 +463,9 @@ terraform output -json > ../grading.json
 
 ---
 
-Troubleshooting
+##  Troubleshooting
 
-Terraform Destroy Fails
+### Terraform Destroy Fails
 
 1. Delete the ALB manually:
    ```bash
@@ -423,9 +481,9 @@ Terraform Destroy Fails
    ```
 4. Retry destroy.
 
-Pods CrashLoopBackOff
+### Pods CrashLoopBackOff
 
-Check logs:
+**Check logs:**
 
 ```bash
 kubectl logs -n retail-app deployment/<service> --tail=50
@@ -433,13 +491,13 @@ kubectl logs -n retail-app deployment/<service> --tail=50
 
 Common issues:
 
-· Wrong database credentials → Check Secrets Manager
-· Missing MySQL driver → Use Helm charts instead of raw manifests
-· Insufficient pod capacity → Increase node count
+- Wrong database credentials → Check Secrets Manager
+- Database not reachable → Check security group rules
 
-ALB Not Provisioning
 
-Check LB controller logs:
+### ALB Not Provisioning
+
+**Check LB controller logs:**
 
 ```bash
 kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=30
@@ -447,13 +505,13 @@ kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=30
 
 Common issues:
 
-· Missing CRDs → Apply CRDs manually
-· RBAC permissions → Update ClusterRole
-· IAM policy missing actions → Update inline policy
+- Missing CRDs → Apply CRDs manually
+- RBAC permissions → Update ClusterRole
+- IAM policy missing actions → Update inline policy
 
 ---
 
-Tags
+##  Tags
 
 All resources are tagged with:
 
@@ -463,18 +521,14 @@ Project: karatu-2025-capstone
 
 ---
 
-License
+##  License
 
 This project is created for the Karatu 2025 Capstone program.
 
 ---
 
-Contact
+##  Contact
 
-Student: [Your Name]
-Repository: [GitHub URL]
-Application URL: [ALB URL after deployment]
-
-```
-
----
+**Student-Id:** ALT-SOE-025-3778
+**Repository:** https://github.com/Tbraima44/PROJECT-BEDROCK
+**Application URL:** [ALB URL after deployment]

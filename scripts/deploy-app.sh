@@ -172,6 +172,30 @@ echo "  🖥️  Deploying UI..."
 helm upgrade --install ui ./retail-store-app-charts/ui/chart/ \
   --namespace "$NAMESPACE"
 
+  echo "  🐰 Deploying RabbitMQ..."
+helm upgrade --install rabbitmq bitnami/rabbitmq \
+  --namespace "$NAMESPACE" \
+  --set auth.username=guest \
+  --set auth.password=guest \
+  --set persistence.enabled=false \
+  --set resources.requests.cpu=50m \
+  --set resources.requests.memory=64Mi
+
+echo "  📦 Deploying Redis..."
+helm upgrade --install redis bitnami/redis \
+  --namespace "$NAMESPACE" \
+  --set auth.enabled=false \
+  --set master.persistence.enabled=false \
+  --set resources.requests.cpu=50m \
+  --set resources.requests.memory=64Mi
+
+  echo "📊 Deploying CloudWatch Observability (FluentBit)..."
+helm upgrade --install aws-cloudwatch-observability eks/amazon-cloudwatch-observability \
+  --namespace amazon-cloudwatch \
+  --create-namespace \
+  --set clusterName="$CLUSTER_NAME" \
+  --set region="$REGION"
+
 # ------------------------------------------------------------------
 # 9. Apply Ingress
 # ------------------------------------------------------------------
