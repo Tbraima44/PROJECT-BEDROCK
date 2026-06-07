@@ -143,35 +143,35 @@ echo "  ✅ LB Controller is running."
 echo "📦 Deploying Retail Store with Helm..."
 
 # Clone repo if not present
-if [ ! -d "./retail-store-sample-app" ]; then
-  git clone --depth=1 https://github.com/aws-containers/retail-store-sample-app.git
-fi
+# if [ ! -d "./retail-store-sample-app" ]; then
+#   git clone --depth=1 https://github.com/aws-containers/retail-store-sample-app.git
+# fi
 
 # Deploy each service using the committed values file
 echo "  🛒 Deploying carts..."
-helm upgrade --install carts ./retail-store-sample-app/src/cart/chart/ \
+helm upgrade --install carts ./retail-store-app-charts/cart/chart/ \
   --namespace "$NAMESPACE" \
   --values kubernetes/helm/values.yaml
 
 echo "  📚 Deploying catalog..."
-helm upgrade --install catalog ./retail-store-sample-app/src/catalog/chart/ \
+helm upgrade --install catalog ./retail-store-app-charts/catalog/chart/ \
   --namespace "$NAMESPACE" \
   --values kubernetes/helm/values.yaml
 
 echo "  📦 Deploying orders..."
-helm upgrade --install orders ./retail-store-sample-app/src/orders/chart/ \
+helm upgrade --install orders ./retail-store-app-charts/orders/chart/ \
   --namespace "$NAMESPACE" \
   --values kubernetes/helm/values.yaml
 
 echo "  💰 Deploying checkout..."
-helm upgrade --install checkout ./retail-store-sample-app/src/checkout/chart/ \
+helm upgrade --install checkout ./retail-store-app-charts/checkout/chart/ \
   --namespace "$NAMESPACE" \
   --values kubernetes/helm/values.yaml
 
 echo "  🖥️  Deploying UI..."
-helm upgrade --install ui ./retail-store-sample-app/src/ui/chart/ \
+helm upgrade --install ui ./retail-store-app-charts/ui/chart/ \
   --namespace "$NAMESPACE"
-  
+
 # ------------------------------------------------------------------
 # 9. Apply Ingress
 # ------------------------------------------------------------------
