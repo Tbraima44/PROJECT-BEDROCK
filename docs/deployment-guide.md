@@ -1,6 +1,3 @@
-Here's a comprehensive deployment-guide.md for your project:
-
-```markdown
 # 🚀 Deployment Guide - Project Bedrock
 
 **InnovateMart Retail Store on AWS EKS**
@@ -41,12 +38,12 @@ Here's a comprehensive deployment-guide.md for your project:
   ```bash
   aws configure
   # Enter Access Key ID, Secret Access Key, region: us-east-1, output: json
-```
+  ```
 
 GitHub Requirements
 
-· GitHub account with repository access
-· Repository secrets configured (see CI/CD Pipeline Setup)
+- GitHub account with repository access
+- Repository secrets configured (see CI/CD Pipeline Setup)
 
 ---
 
