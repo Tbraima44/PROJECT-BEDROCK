@@ -84,14 +84,15 @@ This project provisions a secure Amazon EKS cluster, deploys the AWS Retail Stor
 │       └── requirements.txt
 │
 ├── retail-store-app-charts/    # Helm charts for the Retail Store App 
-│   ├── cart/**              
-│   ├── catalog/**
-│   ├── checkout/**
-│   ├── orders/**
-│   ├── ui/**
+│   ├── cart/chart/              
+│   ├── catalog/chart/
+│   ├── checkout/chart/
+│   ├── orders/chart/
+│   ├── ui/chart/
 │
 ├── scripts/                     # Automation scripts
 │   ├── deploy-app.sh            # Main application deployment script
+│   ├── destroy-all.sh           #  Destroy all resources
 │   └── generate-grading-json.sh # Generate grading.json file
 │
 ├── terraform/                  # IaC – VPC, EKS, RDS, IAM, S3, Lambda, etc.

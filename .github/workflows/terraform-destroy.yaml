@@ -8,13 +8,6 @@ on:
         required: true
         default: ''
         type: string
-      environment:
-        description: 'Environment to destroy'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
 
 env:
   AWS_REGION: us-east-1
@@ -22,7 +15,6 @@ env:
 jobs:
   terraform-destroy:
     runs-on: ubuntu-latest
-    # Only run if the user typed "DESTROY" exactly
     if: ${{ github.event.inputs.confirm_destroy == 'DESTROY' }}
     
     steps:
@@ -36,81 +28,38 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
           terraform_version: 1.5.0
-
-      - name: Pre-cleanup - Delete ALBs
-        run: |
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
-          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-            ALB_ARNS=$(aws elbv2 describe-load-balancers --region $AWS_REGION --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text)
-            for arn in $ALB_ARNS; do
-              echo "Deleting ALB: $arn"
-              aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region $AWS_REGION
-            done
-          fi
-
-      - name: Pre-cleanup - Delete NAT Gateways
-        run: |
-          VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region $AWS_REGION)
-          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-            NGW_IDS=$(aws ec2 describe-nat-gateways --region $AWS_REGION --filter "Name=vpc-id,Values=$VPC_ID" --query 'NatGateways[*].NatGatewayId' --output text)
-            for ngw in $NGW_IDS; do
-              echo "Deleting NAT Gateway: $ngw"
-              aws ec2 delete-nat-gateway --nat-gateway-id "$ngw" --region $AWS_REGION || true
-            done
-            # Wait for NAT Gateways to delete
-            for ngw in $NGW_IDS; do
-              echo "Waiting for NAT Gateway $ngw to delete..."
-              aws ec2 wait nat-gateway-deleted --nat-gateway-ids "$ngw" --region $AWS_REGION || true
-            done
-          fi 
-          
-      - name: Pre-cleanup - Release Elastic IPs
-        run: |
-          ALLOC_IDS=$(aws ec2 describe-addresses --region $AWS_REGION --query 'Addresses[?AssociationId==null].AllocationId' --output text)
-          for alloc in $ALLOC_IDS; do
-            echo "Releasing EIP: $alloc"
-            aws ec2 release-address --allocation-id "$alloc" --region $AWS_REGION || true
-          done
-          
+      
       - name: Package Lambda function
         run: |
           cd lambda/bedrock-asset-processor
           zip -r ../bedrock-asset-processor.zip index.py
-          cd ../..    
+          cd ../..
       
-      - name: Terraform Init
-        working-directory: terraform
-        run: terraform init
-      
-      - name: Terraform Destroy
-        working-directory: terraform
-        run: terraform destroy -auto-approve -var="db_password=${{ secrets.DB_PASSWORD }}"
-        env:
-          TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
+      - name: Run destroy script
+        run: |
+          chmod +x scripts/destroy-all.sh
+          ./scripts/destroy-all.sh ${{ secrets.DB_PASSWORD }}
       
       - name: Notify destruction complete
         run: |
           echo "## 🔥 Terraform Destroy Complete" >> $GITHUB_STEP_SUMMARY
           echo "**All AWS resources have been destroyed.**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- VPC, Subnets, Internet Gateway, NAT Gateway" >> $GITHUB_STEP_SUMMARY
-          echo "- EKS Cluster and Node Groups" >> $GITHUB_STEP_SUMMARY
-          echo "- RDS MySQL and PostgreSQL instances" >> $GITHUB_STEP_SUMMARY
-          echo "- DynamoDB Table" >> $GITHUB_STEP_SUMMARY
-          echo "- S3 Buckets" >> $GITHUB_STEP_SUMMARY
-          echo "- Lambda Function" >> $GITHUB_STEP_SUMMARY
-          echo "- IAM Roles and Policies" >> $GITHUB_STEP_SUMMARY
-          echo "- Secrets Manager secrets" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "> ⚠️ To rebuild, push a change to the \`terraform/\` directory or run the **Terraform Apply** workflow." >> $GITHUB_STEP_SUMMARY
-  
+
   skip-confirmation:
     runs-on: ubuntu-latest
-    # Run if the user did NOT type "DESTROY"
     if: ${{ github.event.inputs.confirm_destroy != 'DESTROY' }}
     steps:
       - name: Destruction aborted
