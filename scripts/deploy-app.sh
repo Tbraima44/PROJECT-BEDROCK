@@ -105,30 +105,30 @@ echo "  ✅ LB Controller is running."
 echo "🚀 Deploying Retail Store with Helm..."
 
 echo "  🛒 Deploying carts..."
-helm upgrade --install carts ./charts/cart --namespace "$NAMESPACE" \
+helm upgrade --install carts ./retail-store-app-charts/cart --namespace "$NAMESPACE" \
   --set mysql.enabled=false \
   --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
   --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  📚 Deploying catalog..."
-helm upgrade --install catalog ./charts/catalog --namespace "$NAMESPACE" \
+helm upgrade --install catalog ./retail-store-app-charts/catalog --namespace "$NAMESPACE" \
   --set mysql.enabled=false \
   --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
   --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  📦 Deploying orders..."
-helm upgrade --install orders ./charts/orders --namespace "$NAMESPACE" \
+helm upgrade --install orders ./retail-store-app-charts/orders --namespace "$NAMESPACE" \
   --set mysql.enabled=false \
   --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
   --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  💰 Deploying checkout..."
-helm upgrade --install checkout ./charts/checkout --namespace "$NAMESPACE" \
+helm upgrade --install checkout ./retail-store-app-charts/checkout --namespace "$NAMESPACE" \
   --set dynamodb.enabled=false \
   --set dynamodb.tableName=project-bedrock-retail-store --set dynamodb.region="$REGION"
 
 echo "  🖥️  Deploying UI..."
-helm upgrade --install ui ./charts/ui --namespace "$NAMESPACE"
+helm upgrade --install ui ./retail-store-app-charts/ui --namespace "$NAMESPACE"
 
 echo "  🐰 Deploying RabbitMQ..."
 kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
