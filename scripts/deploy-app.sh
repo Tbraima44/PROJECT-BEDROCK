@@ -9,6 +9,10 @@ CLUSTER_NAME="project-bedrock-cluster"
 REGION="us-east-1"
 NAMESPACE="retail-app"
 
+# Paths
+CHARTS_DIR="./retail-store-app-charts"
+VALUES_FILE="./kubernetes/helm/values.yaml"
+
 # ------------------------------------------------------------------
 # 1. Prerequisites
 # ------------------------------------------------------------------
@@ -33,7 +37,6 @@ kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -
 # ------------------------------------------------------------------
 echo "📦 Adding Helm repositories..."
 helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
-helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
 helm repo update
 
 # ------------------------------------------------------------------
@@ -100,36 +103,37 @@ kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balanc
 echo "  ✅ LB Controller is running."
 
 # ------------------------------------------------------------------
-# 8. Deploy Retail Store with Helm
+# 8. Deploy Retail Store with Helm (using local charts and values.yaml)
 # ------------------------------------------------------------------
 echo "🚀 Deploying Retail Store with Helm..."
 
 echo "  🛒 Deploying carts..."
-helm upgrade --install carts ./retail-store-app-charts/cart --namespace "$NAMESPACE" \
-  --set mysql.enabled=false \
-  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
-  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
+helm upgrade --install carts "${CHARTS_DIR}/cart/chart/" \
+  --namespace "$NAMESPACE" \
+  --values "$VALUES_FILE"
 
 echo "  📚 Deploying catalog..."
-helm upgrade --install catalog ./retail-store-app-charts/catalog --namespace "$NAMESPACE" \
-  --set mysql.enabled=false \
-  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
-  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
+helm upgrade --install catalog "${CHARTS_DIR}/catalog/chart/" \
+  --namespace "$NAMESPACE" \
+  --values "$VALUES_FILE"
 
 echo "  📦 Deploying orders..."
-helm upgrade --install orders ./retail-store-app-charts/orders --namespace "$NAMESPACE" \
-  --set mysql.enabled=false \
-  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
-  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
+helm upgrade --install orders "${CHARTS_DIR}/orders/chart/" \
+  --namespace "$NAMESPACE" \
+  --values "$VALUES_FILE"
 
 echo "  💰 Deploying checkout..."
-helm upgrade --install checkout ./retail-store-app-charts/checkout --namespace "$NAMESPACE" \
-  --set dynamodb.enabled=false \
-  --set dynamodb.tableName=project-bedrock-retail-store --set dynamodb.region="$REGION"
+helm upgrade --install checkout "${CHARTS_DIR}/checkout/chart/" \
+  --namespace "$NAMESPACE" \
+  --values "$VALUES_FILE"
 
 echo "  🖥️  Deploying UI..."
-helm upgrade --install ui ./retail-store-app-charts/ui --namespace "$NAMESPACE"
+helm upgrade --install ui "${CHARTS_DIR}/ui/chart/" \
+  --namespace "$NAMESPACE"
 
+# ------------------------------------------------------------------
+# 9. Deploy RabbitMQ and Redis
+# ------------------------------------------------------------------
 echo "  🐰 Deploying RabbitMQ..."
 kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
 
@@ -137,13 +141,13 @@ echo "  📦 Deploying Redis..."
 kubectl apply -f kubernetes/retail-store/redis.yaml
 
 # ------------------------------------------------------------------
-# 9. Enable CloudWatch Observability
+# 10. Enable CloudWatch Observability
 # ------------------------------------------------------------------
 echo "📊 Enabling CloudWatch Observability..."
 aws eks create-addon --cluster-name "$CLUSTER_NAME" --addon-name amazon-cloudwatch-observability --region "$REGION" 2>/dev/null || echo "Add-on may already exist"
 
 # ------------------------------------------------------------------
-# 10. Apply RBAC and Ingress
+# 11. Apply RBAC and Ingress
 # ------------------------------------------------------------------
 echo "🔐 Applying RBAC..."
 kubectl apply -f kubernetes/rbac/dev-view-role.yaml
@@ -152,14 +156,14 @@ echo "🚪 Applying Ingress..."
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 # ------------------------------------------------------------------
-# 11. Update Lambda
+# 12. Update Lambda
 # ------------------------------------------------------------------
 echo "⚡ Updating Lambda..."
 cd lambda/bedrock-asset-processor && zip -r ../bedrock-asset-processor.zip index.py && cd ../..
 aws lambda update-function-code --function-name bedrock-asset-processor --zip-file fileb://lambda/bedrock-asset-processor.zip --region "$REGION" --no-cli-pager
 
 # ------------------------------------------------------------------
-# 12. Wait for ALB
+# 13. Wait for ALB
 # ------------------------------------------------------------------
 echo "⏳ Waiting for ALB..."
 sleep 30
