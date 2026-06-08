@@ -10,7 +10,6 @@ terraform.tfvars
 *.auto.tfvars
 **/.terraform/*
 
-grading.json
 
 lambda/bedrock-asset-processor.zip
 bedrock-asset-processor.zip

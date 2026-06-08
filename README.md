@@ -66,13 +66,16 @@ This project provisions a secure Amazon EKS cluster, deploys the AWS Retail Stor
 │   └── deployment-guide.md
 │
 ├── kubernetes/                 # Application manifests & RBAC
+│   ├── aws-load-balancer-controller/
+│   │   └── deployment.yaml
 │   ├── helm/
 │   │   └── values.yaml                 # Helm values for managed databases
 │   ├── rbac/
 │   │   ├── aws-load-balancer-controller-clusterrole
 │   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
 │   └── retail-store/           # Ingress
-│       ├── db-external-services.yaml   # Keep for reference, Helm managed DB
+│       ├── rabbitmq.yaml
+│       ├── redis.yaml
 │       └── ingress.yaml
 │   
 ├── lambda/                     # Lambda function source

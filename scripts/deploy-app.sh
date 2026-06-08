@@ -13,21 +13,14 @@ NAMESPACE="retail-app"
 # 1. Prerequisites
 # ------------------------------------------------------------------
 echo "📋 Checking prerequisites..."
-if ! command -v kubectl &> /dev/null; then
-  echo "❌ kubectl not found."
-  exit 1
-fi
-if ! command -v helm &> /dev/null; then
-  echo "⚙️  Installing Helm..."
-  curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-fi
+command -v kubectl &> /dev/null || { echo "❌ kubectl not found."; exit 1; }
+command -v helm &> /dev/null || { curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash; }
 
 # ------------------------------------------------------------------
 # 2. Connect to EKS cluster
 # ------------------------------------------------------------------
 echo "🔗 Updating kubeconfig..."
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
-kubectl get nodes
 
 # ------------------------------------------------------------------
 # 3. Create namespace
@@ -36,33 +29,26 @@ echo "📁 Creating namespace '$NAMESPACE'..."
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------
-# 4. RBAC for developer access
+# 4. Add Helm repos
 # ------------------------------------------------------------------
-echo "🔐 Applying RBAC..."
-kubectl apply -f kubernetes/rbac/dev-view-role.yaml
-kubectl apply -f kubernetes/rbac/aws-load-balancer-controller-clusterrole.yaml
+echo "📦 Adding Helm repositories..."
+helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
+helm repo add eks https://aws.github.io/eks-charts 2>/dev/null || true
+helm repo update
 
 # ------------------------------------------------------------------
-# 5. Fetch infrastructure endpoints
+# 5. Get infrastructure values
 # ------------------------------------------------------------------
 echo "📊 Fetching infrastructure endpoints..."
 MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
-DYNAMODB_TABLE="project-bedrock-retail-store"
-
-# VPC ID for LB controller
 VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region "$REGION")
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
-LB_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/project-bedrock-lb-controller-role"
 
 # ------------------------------------------------------------------
-# 6. Get database credentials from Secrets Manager
+# 6. Get database credentials
 # ------------------------------------------------------------------
 echo "🔑 Retrieving database credentials..."
-DB_SECRET=$(aws secretsmanager get-secret-value \
-  --secret-id project-bedrock-db-credentials \
-  --query SecretString \
-  --output text \
-  --region "$REGION")
+DB_SECRET=$(aws secretsmanager get-secret-value --secret-id project-bedrock-db-credentials --query SecretString --output text --region "$REGION")
 MYSQL_USER=$(echo "$DB_SECRET" | jq -r '.mysql_username')
 MYSQL_PASS=$(echo "$DB_SECRET" | jq -r '.mysql_password')
 
@@ -71,68 +57,44 @@ MYSQL_PASS=$(echo "$DB_SECRET" | jq -r '.mysql_password')
 # ------------------------------------------------------------------
 echo "🌐 Installing AWS Load Balancer Controller..."
 
-# CRDs
+# Apply CRDs
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_targetgroupbindings.yaml
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_ingressclassparams.yaml
 
-# TLS cert
+# Apply RBAC
+kubectl apply -f kubernetes/rbac/aws-load-balancer-controller-clusterrole.yaml
+
+# Generate TLS cert
 openssl req -x509 -newkey rsa:2048 -keyout /tmp/tls.key -out /tmp/tls.crt -days 365 -nodes -subj "/CN=aws-load-balancer-controller"
 kubectl create secret tls aws-load-balancer-tls --cert=/tmp/tls.crt --key=/tmp/tls.key -n kube-system --dry-run=client -o yaml | kubectl apply -f -
 rm /tmp/tls.key /tmp/tls.crt
 
-# Clean up old controller
-kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
+# Clean up and create ServiceAccount with IRSA
 kubectl delete serviceaccount aws-load-balancer-controller -n kube-system --ignore-not-found=true
-
-# ServiceAccount with IRSA
 kubectl create serviceaccount aws-load-balancer-controller -n kube-system --dry-run=client -o yaml | \
-  kubectl annotate --local -f - "eks.amazonaws.com/role-arn=${LB_ROLE_ARN}" --dry-run=client -o yaml | \
+  kubectl annotate --local -f - "eks.amazonaws.com/role-arn=arn:aws:iam::${ACCOUNT_ID}:role/project-bedrock-lb-controller-role" --dry-run=client -o yaml | \
   kubectl apply -f -
 
-# Controller deployment
+# Create ClusterRoleBinding
+kubectl delete clusterrolebinding aws-load-balancer-controller --ignore-not-found=true
 kubectl apply -f - <<EOF
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
   name: aws-load-balancer-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aws-load-balancer-controller
+subjects:
+- kind: ServiceAccount
+  name: aws-load-balancer-controller
   namespace: kube-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: aws-load-balancer-controller
-  template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: aws-load-balancer-controller
-    spec:
-      serviceAccountName: aws-load-balancer-controller
-      containers:
-      - name: controller
-        image: public.ecr.aws/eks/aws-load-balancer-controller:v2.7.0
-        args:
-        - --cluster-name=$CLUSTER_NAME
-        - --ingress-class=alb
-        - --aws-vpc-id=$VPC_ID
-        - --enable-shield=false
-        - --enable-waf=false
-        - --enable-wafv2=false
-        env:
-        - name: AWS_REGION
-          value: $REGION
-        volumeMounts:
-        - mountPath: /tmp/k8s-webhook-server/serving-certs
-          name: cert
-          readOnly: true
-        resources:
-          requests:
-            cpu: 100m
-            memory: 128Mi
-      volumes:
-      - name: cert
-        secret:
-          secretName: aws-load-balancer-tls
 EOF
+
+# Deploy controller with dynamic VPC ID
+kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
+sed "s/--aws-vpc-id=.*/--aws-vpc-id=$VPC_ID/" kubernetes/aws-load-balancer-controller/deployment.yaml | kubectl apply -f -
 
 kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balancer-controller -n kube-system
 echo "  ✅ LB Controller is running."
@@ -140,91 +102,72 @@ echo "  ✅ LB Controller is running."
 # ------------------------------------------------------------------
 # 8. Deploy Retail Store with Helm
 # ------------------------------------------------------------------
-echo "📦 Deploying Retail Store with Helm..."
+echo "🚀 Deploying Retail Store with Helm..."
 
-# Clone repo if not present
-# if [ ! -d "./retail-store-sample-app" ]; then
-#   git clone --depth=1 https://github.com/aws-containers/retail-store-sample-app.git
-# fi
-
-# Deploy each service using the committed values file
 echo "  🛒 Deploying carts..."
-helm upgrade --install carts ./retail-store-app-charts/cart/chart/ \
-  --namespace "$NAMESPACE" \
-  --values kubernetes/helm/values.yaml
+helm upgrade --install carts ./charts/cart --namespace "$NAMESPACE" \
+  --set mysql.enabled=false \
+  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
+  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  📚 Deploying catalog..."
-helm upgrade --install catalog ./retail-store-app-charts/catalog/chart/ \
-  --namespace "$NAMESPACE" \
-  --values kubernetes/helm/values.yaml
+helm upgrade --install catalog ./charts/catalog --namespace "$NAMESPACE" \
+  --set mysql.enabled=false \
+  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
+  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  📦 Deploying orders..."
-helm upgrade --install orders ./retail-store-app-charts/orders/chart/ \
-  --namespace "$NAMESPACE" \
-  --values kubernetes/helm/values.yaml
+helm upgrade --install orders ./charts/orders --namespace "$NAMESPACE" \
+  --set mysql.enabled=false \
+  --set datasource.url="jdbc:mysql://${MYSQL_HOST}:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true" \
+  --set datasource.username="$MYSQL_USER" --set datasource.password="$MYSQL_PASS"
 
 echo "  💰 Deploying checkout..."
-helm upgrade --install checkout ./retail-store-app-charts/checkout/chart/ \
-  --namespace "$NAMESPACE" \
-  --values kubernetes/helm/values.yaml
+helm upgrade --install checkout ./charts/checkout --namespace "$NAMESPACE" \
+  --set dynamodb.enabled=false \
+  --set dynamodb.tableName=project-bedrock-retail-store --set dynamodb.region="$REGION"
 
 echo "  🖥️  Deploying UI..."
-helm upgrade --install ui ./retail-store-app-charts/ui/chart/ \
-  --namespace "$NAMESPACE"
+helm upgrade --install ui ./charts/ui --namespace "$NAMESPACE"
 
-  echo "  🐰 Deploying RabbitMQ..."
-helm upgrade --install rabbitmq bitnami/rabbitmq \
-  --namespace "$NAMESPACE" \
-  --set auth.username=guest \
-  --set auth.password=guest \
-  --set persistence.enabled=false \
-  --set resources.requests.cpu=50m \
-  --set resources.requests.memory=64Mi
+echo "  🐰 Deploying RabbitMQ..."
+kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
 
 echo "  📦 Deploying Redis..."
-helm upgrade --install redis bitnami/redis \
-  --namespace "$NAMESPACE" \
-  --set auth.enabled=false \
-  --set master.persistence.enabled=false \
-  --set resources.requests.cpu=50m \
-  --set resources.requests.memory=64Mi
-
-  echo "📊 Deploying CloudWatch Observability (FluentBit)..."
-helm upgrade --install aws-cloudwatch-observability eks/amazon-cloudwatch-observability \
-  --namespace amazon-cloudwatch \
-  --create-namespace \
-  --set clusterName="$CLUSTER_NAME" \
-  --set region="$REGION"
+kubectl apply -f kubernetes/retail-store/redis.yaml
 
 # ------------------------------------------------------------------
-# 9. Apply Ingress
+# 9. Enable CloudWatch Observability
 # ------------------------------------------------------------------
+echo "📊 Enabling CloudWatch Observability..."
+aws eks create-addon --cluster-name "$CLUSTER_NAME" --addon-name amazon-cloudwatch-observability --region "$REGION" 2>/dev/null || echo "Add-on may already exist"
+
+# ------------------------------------------------------------------
+# 10. Apply RBAC and Ingress
+# ------------------------------------------------------------------
+echo "🔐 Applying RBAC..."
+kubectl apply -f kubernetes/rbac/dev-view-role.yaml
+
 echo "🚪 Applying Ingress..."
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 # ------------------------------------------------------------------
-# 10. Update Lambda
+# 11. Update Lambda
 # ------------------------------------------------------------------
 echo "⚡ Updating Lambda..."
-cd lambda/bedrock-asset-processor
-zip -r ../bedrock-asset-processor.zip index.py
-cd ../..
+cd lambda/bedrock-asset-processor && zip -r ../bedrock-asset-processor.zip index.py && cd ../..
 aws lambda update-function-code --function-name bedrock-asset-processor --zip-file fileb://lambda/bedrock-asset-processor.zip --region "$REGION" --no-cli-pager
 
 # ------------------------------------------------------------------
-# 11. Wait for ALB
+# 12. Wait for ALB
 # ------------------------------------------------------------------
 echo "⏳ Waiting for ALB..."
 sleep 30
-ATTEMPTS=0
-MAX_ATTEMPTS=30
-ALB_URL=""
-while [ $ATTEMPTS -lt $MAX_ATTEMPTS ]; do
+for i in $(seq 1 30); do
   ALB_URL=$(kubectl get ingress retail-store-ingress -n "$NAMESPACE" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
   [ -n "$ALB_URL" ] && break
-  echo "  Waiting... attempt $((ATTEMPTS+1))/$MAX_ATTEMPTS"
+  echo "  Waiting... $i/30"
   sleep 10
-  ATTEMPTS=$((ATTEMPTS+1))
 done
 
 echo ""

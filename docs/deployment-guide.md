@@ -7,15 +7,19 @@
 ## 📋 Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [Repository Setup](#repository-setup)
+- [Architecture Overview](#architecture-overview)
+- [Repository Structure](#repository-structure)
+- [Quick Start](#quick-start)
 - [Infrastructure Deployment](#infrastructure-deployment)
 - [Application Deployment](#application-deployment)
-- [CI/CD Pipeline Setup](#cicd-pipeline-setup)
+- [CI/CD Pipeline](#cicd-pipeline)
 - [Verification Steps](#verification-steps)
-- [Developer Access Setup](#developer-access-setup)
+- [Developer Access](#developer-access)
+- [Observability](#observability)
+- [Serverless Extension](#serverless-extension)
 - [Troubleshooting](#troubleshooting)
 - [Destroy and Rebuild](#destroy-and-rebuild)
-
+- [Useful Commands](#useful-commands)
 ---
 
 ## Prerequisites
@@ -24,12 +28,12 @@
 
 | **Tool** | **Version** | **Installation** |
 |--------------|--------------|--------------|
-| **AWS CLI** | >= 2.0 | `pip install awscli` or [AWS Docs](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) |
-| **Terraform** | >= 1.5.0 | `brew install terraform` or [Terraform Downloads](https://developer.hashicorp.com/terraform/downloads) |
-| **kubectl** | >= 1.28 | `brew install kubectl` or [Kubernetes Docs](https://kubernetes.io/docs/tasks/tools/) |
-| **Helm** | >= 3.12 | `brew install helm` or [Helm Docs](https://helm.sh/docs/intro/install/) |
+| **AWS CLI** | >= 2.0 | `pip install awscli` (v2) or official installer |
+| **Terraform** | >= 1.5.0 | `brew install terraform` or HashiCorp repo for Linux |
+| **kubectl** | >= 1.28 | `brew install kubectl` or official guide for Linux |
+| **Helm** | >= 3.12 | `brew install helm` or `snap install helm` |
 | **jq** | >= 1.6 | `brew install jq` or `apt install jq` |
-| **Git** | >= 2.0 | `brew install git` or [Git Downloads](https://git-scm.com/downloads) |
+| **Git** | >= 2.0 | `brew install git` or `apt install git` |
 
 ### AWS Requirements
 
@@ -46,6 +50,10 @@
 - Repository secrets configured (see CI/CD Pipeline Setup)
 
 ---
+
+## Architecture Overview
+
+![alt text](architecture.png)
 
 ##   Repository Setup
 
@@ -71,13 +79,16 @@ cd PROJECT-BEDROCK
 │   └── deployment-guide.md
 │
 ├── kubernetes/                 # Application manifests & RBAC
+│   ├── aws-load-balancer-controller/
+│   │   └── deployment.yaml
 │   ├── helm/
-│   │   └── values.yaml                 # Helm values for managed databases
+│   │   └── values.yaml                 # Helm values for managed databases overrides
 │   ├── rbac/
 │   │   ├── aws-load-balancer-controller-clusterrole
 │   │   └── dev-view-role.yaml  # RBAC for bedrock-dev-view user access
 │   └── retail-store/           # Ingress
-│       ├── db-external-services.yaml   # Keep for reference, Helm managed DB
+│       ├── rabbitmq.yaml
+│       ├── redis.yaml
 │       └── ingress.yaml
 │   
 ├── lambda/                     # Lambda function source
