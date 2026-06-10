@@ -42,12 +42,6 @@ jobs:
         with:
           terraform_version: 1.5.0
       
-      - name: Package Lambda function
-        run: |
-          cd lambda/bedrock-asset-processor
-          zip -r ../bedrock-asset-processor.zip index.py
-          cd ../..
-      
       - name: Run destroy script
         run: |
           chmod +x scripts/destroy-all.sh

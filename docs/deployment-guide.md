@@ -8,18 +8,19 @@
 
 - [Prerequisites](#prerequisites)
 - [Architecture Overview](#architecture-overview)
-- [Repository Structure](#repository-structure)
-- [Quick Start](#quick-start)
+- [Repository Setup](#repository-setup)
 - [Infrastructure Deployment](#infrastructure-deployment)
 - [Application Deployment](#application-deployment)
-- [CI/CD Pipeline](#cicd-pipeline)
+  - [Option 1: Automated Deployment (Recommended)](#option-1-automated-deployment-recommended)
+  - [Option 2: Manual Step-by-Step Deployment](#option-2-manual-step-by-step-deployment)
+- [CI/CD Pipeline Setup](#cicd-pipeline-setup)
 - [Verification Steps](#verification-steps)
-- [Developer Access](#developer-access)
+- [Developer Access Setup](#developer-access-setup)
 - [Observability](#observability)
-- [Serverless Extension](#serverless-extension)
 - [Troubleshooting](#troubleshooting)
 - [Destroy and Rebuild](#destroy-and-rebuild)
 - [Useful Commands](#useful-commands)
+
 ---
 
 ## Prerequisites
@@ -55,22 +56,23 @@
 
 ![alt text](architecture.png)
 
+---
+
 ##   Repository Setup
 
-1. **Clone the Repository**
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Tbraima44/PROJECT-BEDROCK.git
 cd PROJECT-BEDROCK
 ```
 
-2. **Repository Structure**
+### 2. Repository Structure
 
 ```
 ├── .github/workflows/          # CI/CD pipelines
 │   ├── deploy-app.yaml         # Deploys application to EKS
 │   ├── terraform-apply.yml     # Runs on merge to main, applies infrastructure
-│   ├── terraform-destroy.yml   # Run manually, delete infrastructure
 │   └── terraform-plan.yml      # Runs on PR, posts plan
 │
 ├── docs/                     # Documentation
@@ -128,7 +130,7 @@ cd PROJECT-BEDROCK
 └── README.md               
 ```
 
-3. **Configure Variables**
+### 3. Configure Variables
 
 Edit terraform/terraform.tfvars:
 
@@ -136,13 +138,6 @@ Edit terraform/terraform.tfvars:
 db_username = "admin"
 db_password = "YourSecurePassword123!"
 student_id  = "YOUR-STUDENT-ID"
-```
-
-Or generate with the setup script:
-
-```bash
-chmod +x scripts/setup-credentials.sh
-./scripts/setup-credentials.sh "YourSecurePassword123!"
 ```
 
 ---
@@ -201,7 +196,37 @@ terraform apply -auto-approve -var="db_password=YourSecurePassword123!"
 ```bash
 # Check Terraform outputs
 terraform output
+```
 
+---
+
+##  Application Deployment
+
+### Option 1: Automated Deployment (Recommended)
+
+**Run the deployment script:**
+
+```bash
+cd /path/to/PROJECT-BEDROCK
+./scripts/deploy-app.sh
+```
+
+**This script automatically:**
+
+1. Updates kubeconfig
+2. Creates the retail-app namespace
+3. Applies RBAC configuration
+4. Fetches database endpoints from RDS
+5. Retrieves credentials from Secrets Manager
+6. Installs AWS Load Balancer Controller
+7. Deploys microservices via Helm and Kubernetes manifest 
+8. Applies Ingress for ALB
+9. Updates Lambda function
+10. Waits for ALB to be provisioned
+
+###  Verify Deployment
+
+```bash
 # Configure kubectl
 aws eks update-kubeconfig --region us-east-1 --name project-bedrock-cluster
 
@@ -218,62 +243,32 @@ ip-10-0-11-xxx.ec2.internal   Ready    <none>   5m    v1.34.8-eks-3385e9b
 ip-10-0-12-xxx.ec2.internal   Ready    <none>   5m    v1.34.8-eks-3385e9b
 ```
 
----
+### Option 2: Manual Step-by-Step Deployment
 
-##  Application Deployment
-
-### Option 1: Automated Deployment (Recommended)
-
-Run the deployment script:
-
-```bash
-cd /path/to/PROJECT-BEDROCK
-./scripts/deploy-app.sh
-```
-
-**This script automatically:**
-
-1. Updates kubeconfig
-2. Creates the retail-app namespace
-3. Applies RBAC configuration
-4. Fetches database endpoints from RDS
-5. Retrieves credentials from Secrets Manager
-6. Installs AWS Load Balancer Controller
-7. Deploys all microservices via Helm
-8. Applies Ingress for ALB
-9. Updates Lambda function
-10. Waits for ALB to be provisioned
-
-Option 2: Manual Step-by-Step Deployment
-
-2.1 Configure kubectl
+**Step 1: Connect to EKS**
 
 ```bash
 aws eks update-kubeconfig --region us-east-1 --name project-bedrock-cluster
 kubectl get nodes
 ```
 
-2.2 Create Namespace
+**Step 2: Create Namespace**
 
 ```bash
 kubectl create namespace retail-app
 ```
 
-2.3 Apply RBAC
-
-```bash
-kubectl apply -f kubernetes/rbac/dev-view-role.yaml
-kubectl apply -f kubernetes/rbac/aws-load-balancer-controller-clusterrole.yaml
-```
-
-2.4 Install AWS Load Balancer Controller
+**Step 3: Install AWS Load Balancer Controller**
 
 ```bash
 # Apply CRDs
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_targetgroupbindings.yaml
 kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.7.0/config/crd/bases/elbv2.k8s.aws_ingressclassparams.yaml
 
-# Create TLS certificate
+# Apply RBAC
+kubectl apply -f kubernetes/rbac/aws-load-balancer-controller-clusterrole.yaml
+
+# Generate TLS certificate
 openssl req -x509 -newkey rsa:2048 -keyout tls.key -out tls.crt -days 365 -nodes -subj "/CN=aws-load-balancer-controller"
 kubectl create secret tls aws-load-balancer-tls --cert=tls.crt --key=tls.key -n kube-system
 rm tls.key tls.crt
@@ -284,91 +279,153 @@ kubectl create serviceaccount aws-load-balancer-controller -n kube-system --dry-
   kubectl annotate --local -f - "eks.amazonaws.com/role-arn=arn:aws:iam::${ACCOUNT_ID}:role/project-bedrock-lb-controller-role" --dry-run=client -o yaml | \
   kubectl apply -f -
 
-# Get VPC ID
+# Apply ClusterRoleBinding
+kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: aws-load-balancer-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: aws-load-balancer-controller
+subjects:
+- kind: ServiceAccount
+  name: aws-load-balancer-controller
+  namespace: kube-system
+EOF
+
+# Get VPC ID and deploy controller
 VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text)
+sed "s/--aws-vpc-id=.*/--aws-vpc-id=$VPC_ID/" kubernetes/aws-load-balancer-controller/deployment.yaml | kubectl apply -f -
 
-# Deploy controller
-kubectl apply -f kubernetes/aws-load-balancer-controller/install.yaml
-# Or use kubectl to create the deployment with --aws-vpc-id=$VPC_ID
+# Wait for controller
+kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balancer-controller -n kube-system
 ```
 
-2.5 Clone Retail Store Sample App
+**Step 4: Deploy Retail Store with Helm**
 
 ```bash
-git clone https://github.com/aws-containers/retail-store-sample-app.git
-```
+# Deploy each service using local charts
+helm upgrade --install carts ./retail-store-app-charts/cart/chart/ \
+  --namespace retail-app --values kubernetes/helm/values.yaml
 
-2.6 Deploy Services with Helm
+helm upgrade --install catalog ./retail-store-app-charts/catalog/chart/ \
+  --namespace retail-app --values kubernetes/helm/values.yaml
 
-```bash
-# Get MySQL endpoint
-MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text)
+helm upgrade --install orders ./retail-store-app-charts/orders/chart/ \
+  --namespace retail-app --values kubernetes/helm/values.yaml
 
-# Carts
-helm upgrade --install carts ./retail-store-sample-app/src/cart/chart/ \
-  --namespace retail-app \
-  --values kubernetes/helm/values.yaml
+helm upgrade --install checkout ./retail-store-app-charts/checkout/chart/ \
+  --namespace retail-app --values kubernetes/helm/values.yaml
 
-# Catalog
-helm upgrade --install catalog ./retail-store-sample-app/src/catalog/chart/ \
-  --namespace retail-app \
-  --values kubernetes/helm/values.yaml
-
-# Orders
-helm upgrade --install orders ./retail-store-sample-app/src/orders/chart/ \
-  --namespace retail-app \
-  --values kubernetes/helm/values.yaml
-
-# Checkout
-helm upgrade --install checkout ./retail-store-sample-app/src/checkout/chart/ \
-  --namespace retail-app \
-  --values kubernetes/helm/values.yaml
-
-# UI
-helm upgrade --install ui ./retail-store-sample-app/src/ui/chart/ \
+helm upgrade --install ui ./retail-store-app-charts/ui/chart/ \
   --namespace retail-app
 ```
 
-2.7 Apply Ingress
+**Step 5: Deploy RabbitMQ and Redis**
 
 ```bash
+kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
+kubectl apply -f kubernetes/retail-store/redis.yaml
+```
+
+**Step 6: Enable CloudWatch Observability**
+
+```bash
+aws eks create-addon \
+  --cluster-name project-bedrock-cluster \
+  --addon-name amazon-cloudwatch-observability \
+  --region us-east-1
+```
+
+**Step 7: Apply RBAC and Ingress**
+
+```bash
+kubectl apply -f kubernetes/rbac/dev-view-role.yaml
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 ```
 
-2.8 Update Lambda
+**Step 8: Update Lambda Function**
 
 ```bash
 cd lambda/bedrock-asset-processor
 zip -r ../bedrock-asset-processor.zip index.py
 cd ../..
-aws lambda update-function-code --function-name bedrock-asset-processor --zip-file fileb://lambda/bedrock-asset-processor.zip --region us-east-1
+aws lambda update-function-code \
+  --function-name bedrock-asset-processor \
+  --zip-file fileb://lambda/bedrock-asset-processor.zip \
+  --region us-east-1
+```
+
+**Step 9: Get the ALB URL**
+
+```bash
+kubectl get ingress -n retail-app
+# Wait for ADDRESS to appear
+```
+
+**Step 10: Access the Store**
+
+Open the ALB URL in your browser:
+```bash
+http://<ALB_ADDRESS>
 ```
 
 ---
 
-CI/CD Pipeline Setup
+### Verify Deployment
 
-GitHub Secrets Configuration
+```bash
+# Check all pods
+kubectl get pods -n retail-app
+```
+### Expected output:
 
-Go to your GitHub repository → Settings → Secrets and variables → Actions → New repository secret.
+ NAME        READY   STATUS    RESTARTS   AGE
+ carts       1/1     Running   0          5m
+ catalog     1/1     Running   0          5m
+ checkout    1/1     Running   0          5m 
+ orders      1/1     Running   0          5m
+ rabbitmq    1/1     Running   0          5m
+ redis       1/1     Running   0          5m
+ ui          1/1     Running   0          5m
+
+### Check CloudWatch logs
+```bash
+kubectl get pods -n amazon-cloudwatch
+```
+
+---
+
+##  CI/CD Pipeline Setup
+
+### GitHub Secrets Configuration
+
+Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**.
 
 Add the following secrets:
 
-Secret Name Value Description
-AWS_ACCESS_KEY_ID AKIA... IAM user access key
-AWS_SECRET_ACCESS_KEY wJalr... IAM user secret key
-DB_PASSWORD YourSecurePassword123! Database password
+| **Secret Name** | **Value** | **Description** |
+|--------------|-------------|------------|
+| `AWS_ACCESS_KEY_ID` | `AKIA...` | IAM user access key |
+| `AWS_SECRET_ACCESS_KEY` | `wJalr...` | IAM user secret key |
+ `DB_PASSWORD` | `YourSecurePassword123!` | Database password |
 
-Pipeline Triggers
+### Pipeline Triggers
 
-Workflow File Trigger
-Terraform Plan .github/workflows/terraform-plan.yml Pull Request to main (paths: terraform/**)
-Terraform Apply .github/workflows/terraform-apply.yml Push to main (paths: terraform/**)
-Deploy Application .github/workflows/deploy-app.yaml Push to main (paths: kubernetes/**, lambda/**, scripts/**) or after Terraform Apply completes
+| **Workflow** | **Trigger** | **Action** |
+|--------------|-------------|------------|
+|**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
+| **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
+| **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/**) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
 
-Testing the Pipeline
+After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
 
-1. Test Terraform Plan:
+### Testing the Pipeline
+
+1. **Test Terraform Plan:**
+
    ```bash
    git checkout -b test-terraform
    echo "# test" >> terraform/main.tf
@@ -377,16 +434,18 @@ Testing the Pipeline
    git push -u origin test-terraform
    ```
    Create a Pull Request on GitHub. The plan output should appear as a comment.
-2. Test Terraform Apply:
+
+2. **Test Terraform Apply:**
    Merge the PR to main. The apply workflow should run.
-3. Test Deploy Application:
-   Push a change to any file in kubernetes/, lambda/, or scripts/. The deployment workflow should run.
+
+3. **Test Deploy Application:**
+   Push a change to any file in kubernetes/, lambda/, or scripts/. The deployment workflow should run. Or trigger manually on **GitHub Actions** 
 
 ---
 
-Verification Steps
+##  Verification Steps
 
-1. Check Pod Status
+### 1. Check Pod Status
 
 ```bash
 kubectl get pods -n retail-app
@@ -400,23 +459,41 @@ carts-xxxxxxxx-xxxxx       1/1     Running   0          5m
 catalog-xxxxxxxx-xxxxx     1/1     Running   0          5m
 checkout-xxxxxxxx-xxxxx    1/1     Running   0          5m
 orders-xxxxxxxx-xxxxx      1/1     Running   0          5m
+rabbitmq-xxxxxxxx-xxxxx    1/1     Running   0          5m
+redis-xxxxxxxx-xxxxx       1/1     Running   0          5m
 ui-xxxxxxxx-xxxxx          1/1     Running   0          5m
 ```
 
-2. Get ALB URL
+### 2. Verify Logging
+
+```bash
+# Check control plane logs
+aws logs tail /aws/eks/project-bedrock-cluster/cluster --region us-east-1
+
+# Check application logs
+aws logs tail /aws/containerinsights/project-bedrock-cluster/application --region us-east-1
+
+# List all project log groups
+aws logs describe-log-groups --region us-east-1 --query 'logGroups[?contains(logGroupName, `project-bedrock`) || contains(logGroupName, `bedrock-asset`) || contains(logGroupName, `containerinsights`)].logGroupName' --output table
+
+# Application logs
+kubectl logs -n retail-app deployment/catalog --tail=20
+```
+
+### 3. Get ALB URL
 
 ```bash
 kubectl get ingress -n retail-app
 ```
 
-Expected output:
+**Expected output:**
 
 ```
 NAME                   CLASS    HOSTS   ADDRESS                                                                  PORTS   AGE
 retail-store-ingress   <none>   *       k8s-retailap-retailst-xxxxxxxxxx-xxxxxxxxxx.us-east-1.elb.amazonaws.com   80      10m
 ```
 
-3. Access the Store
+### 4. Access the Store
 
 Open the ALB URL in your browser:
 
@@ -426,47 +503,31 @@ http://k8s-retailap-retailst-xxxxxxxxxx-xxxxxxxxxx.us-east-1.elb.amazonaws.com
 
 You should see the InnovateMart Retail Store homepage with product listings.
 
-4. Test Store Functionality
+### 5. Test Store Functionality
 
-· Browse products
-· Add items to cart
-· View cart
-· Proceed to checkout
+- Browse products
+- Add items to cart
+- View cart
+- Proceed to checkout
 
-5. Verify Logging
-
-```bash
-# Control plane logs
-aws logs tail /aws/eks/project-bedrock-cluster/cluster --follow
-
-# Application logs
-kubectl logs -n retail-app deployment/catalog --tail=20
-```
-
-6. Test Serverless Extension
+### 6. Test Serverless Extension
 
 ```bash
-echo "test image content" > test.jpg
+echo "test image content" > test-image.jpg
 aws s3 cp test.jpg s3://bedrock-assets-YOUR-STUDENT-ID/ --profile bedrock-dev
 ```
 
-Check CloudWatch Logs:
+**Check CloudWatch Logs:**
 
 1. Go to AWS Console → CloudWatch → Log groups
-2. Find /aws/lambda/bedrock-asset-processor
-3. Look for log entry: "Image received: test.jpg"
+2. Find `/aws/lambda/bedrock-asset-processor`
+3. Look for log entry: `"Image received: test-image.jpg"`
 
-7. Test Developer Access
+### 7. Test Developer Access
 
 ```bash
 # Configure developer profile
 aws configure --profile bedrock-dev
-
-# Get credentials from Terraform output
-cd terraform
-terraform output -raw dev_user_access_key
-terraform output -raw dev_user_secret_key
-cd ..
 
 # Update kubeconfig
 aws eks update-kubeconfig --name project-bedrock-cluster --profile bedrock-dev --region us-east-1
@@ -480,82 +541,104 @@ kubectl delete pod -n retail-app <any-pod>
 
 ---
 
-Developer Access Setup
+##  Developer Access Setup
 
-IAM User: bedrock-dev-view
+**IAM User:** `bedrock-dev-view`
 
 This user has:
 
-· AWS Console: ReadOnlyAccess managed policy
-· S3: s3:PutObject on bedrock-assets-* bucket
-· Kubernetes: view ClusterRole (read-only)
+**- AWS Console:** `ReadOnlyAccess` managed policy
+**- S3:** `s3:PutObject on bedrock-assets-*` bucket
+**- Kubernetes:** `view` ClusterRole (read-only)
 
-Credentials
+##  Credentials
 
-Get credentials from Terraform output:
+###  Get credentials from Terraform output:
 
 ```bash
+# Create new access keys
+aws iam create-access-key --user-name bedrock-dev-view
+
+# Or get from Terraform output
 cd terraform
 echo "Access Key: $(terraform output -raw dev_user_access_key)"
 echo "Secret Key: $(terraform output -raw dev_user_secret_key)"
 cd ..
 ```
 
-Kubernetes Access
+### Kubernetes Access
 
 The user is mapped to the view ClusterRole via the aws-auth ConfigMap. This is configured automatically by the deployment script.
 
 ---
 
-Troubleshooting
+##  Observability
 
-Issue: Terraform Apply Hangs on EKS
+### Control Plane Logs
 
-Solution: Wait. EKS cluster creation takes 15-25 minutes.
+Enabled in terraform/eks.tf:
 
-Issue: Pods in CrashLoopBackOff
+```hcl
+enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+```
 
-Solution: Check logs:
+### Application Logs (FluentBit)
+
+Deployed via EKS add-on in `amazon-cloudwatch` namespace:
+
+```bash
+kubectl get pods -n amazon-cloudwatch
+```
+
+### CloudWatch Log Groups
+
+| **Log Group** | **Purpose** |
+|---------|----------|
+| `/aws/eks/project-bedrock-cluster/cluster` | Control plane logs |
+| `/aws/containerinsights/project-bedrock-cluster/application` | Application container logs |
+| `/aws/containerinsights/project-bedrock-cluster/performance` | Performance metrics |
+| `/aws/lambda/bedrock-asset-processor` | Lambda function logs |
+
+---
+
+##  Troubleshooting
+
+### Issue: Terraform Apply Hangs on EKS
+
+**Solution:** Wait. EKS cluster creation takes 15-25 minutes.
+
+### Issue: Pods in CrashLoopBackOff
+
+**Solution:** Check logs:
 
 ```bash
 kubectl logs -n retail-app deployment/<service> --tail=50
 ```
 
-Common causes:
+**Common causes:**
 
-· Wrong database credentials: Verify Secrets Manager value
-· Missing MySQL driver: Use Helm chart instead of raw manifest
-· Database not reachable: Check security group rules
+**- Wrong database credentials:** Verify Secrets Manager value
+**- Missing MySQL driver:** Use Helm chart instead of raw manifest
+**- Database not reachable**: Check security group rules
 
-Issue: ALB Not Provisioning
+### Issue: ALB Not Provisioning
 
-Solution: Check LB controller logs:
+**Solution:** Check LB controller logs:
 
 ```bash
 kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=50
 ```
 
-Common causes:
+**Common causes:**
 
-· Missing CRDs: Apply CRDs manually
-· RBAC permissions: Update ClusterRole
-· IAM policy: Check inline policy includes all required actions
+**- Missing CRDs:** Apply CRDs manually
+**- RBAC permissions:** Update ClusterRole
+**- IAM policy:** Check inline policy includes all required actions
+**- VPC ID missing:** Verify `--aws-vpc-id` in controller args
 
-Issue: "Too Many Pods" Error
+### Issue: Terraform Destroy Fails
 
-Solution: Increase node count in terraform/eks.tf:
-
-```hcl
-scaling_config {
-  desired_size = 3
-  max_size     = 4
-  min_size     = 2
-}
-```
-
-Issue: Terraform Destroy Fails
-
-Solution: Manually clean up dependencies:
+**Solution:** Manually clean up dependencies:
 
 ```bash
 # Delete ALB
@@ -571,9 +654,9 @@ aws ec2 describe-nat-gateways --region us-east-1 --filter "Name=tag:Project,Valu
 terraform destroy -auto-approve -var="db_password=YourSecurePassword123!"
 ```
 
-Issue: Secrets Manager "Scheduled for Deletion" Error
+### Issue: Secrets Manager "Scheduled for Deletion" Error
 
-Solution:
+**Solution:**
 
 ```bash
 aws secretsmanager delete-secret \
@@ -584,9 +667,37 @@ aws secretsmanager delete-secret \
 
 ---
 
-Destroy and Rebuild
+##  Destroy and Rebuild
 
-Full Cleanup
+### Automated Teardown
+
+**To completely destroy all resources:**
+
+```bash
+chmod +x scripts/destroy-all.sh
+./scripts/destroy-all.sh
+
+# Or with custom database password
+./scripts/destroy-all.sh "YourSecurePassword123!"
+```
+
+**What the script does:**
+
+1. Uninstalls all Helm releases
+2. Deletes Kubernetes namespaces
+3. Removes LB controller and CRDs
+4. Deletes EKS add-ons
+5. Removes IAM access keys
+6. Empties and deletes S3 buckets
+7. Deletes ALBs, NAT Gateways, and releases Elastic IPs
+8. Force-deletes Secrets Manager secrets
+9. Force deletes VPC and all dependencies
+10. Runs terraform destroy
+11. Cleans up any remaining network interfaces and EIPs
+
+⚠️ This permanently deletes all resources. Ensure you have backups of any data you need.
+
+### Manual Teardown (if needed)
 
 ```bash
 # 1. Delete application
@@ -604,10 +715,21 @@ cd ..
 # 4. Refresh state
 cd terraform
 terraform refresh -var="db_password=YourSecurePassword123!"
+
+# 5. Re-run to confirm
+terraform destroy -auto-approve -var="db_password=YourSecurePassword123!"
 cd ..
 ```
 
-Full Rebuild
+### Verify Everything is Gone
+
+```bash
+aws eks describe-cluster --name project-bedrock-cluster 2>/dev/null || echo "✅ EKS deleted"
+aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql 2>/dev/null || echo "✅ RDS deleted"
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "✅ VPC deleted"
+```
+
+### Full Rebuild
 
 ```bash
 # 1. Apply infrastructure
@@ -625,21 +747,9 @@ kubectl get ingress -n retail-app
 
 ---
 
-Environment Variables Reference
+##  Useful Commands
 
-Variable Value Description
-AWS_REGION us-east-1 AWS region
-CLUSTER_NAME project-bedrock-cluster EKS cluster name
-NAMESPACE retail-app Kubernetes namespace
-DB_USERNAME admin MySQL username
-DB_PASSWORD YourSecurePassword123! MySQL password
-DYNAMODB_TABLE project-bedrock-retail-store DynamoDB table name
-
----
-
-Useful Commands
-
-Kubernetes
+### Kubernetes
 
 ```bash
 # Get all resources in namespace
@@ -658,7 +768,7 @@ kubectl logs -n retail-app deployment/<service> --tail=100 -f
 kubectl exec -it -n retail-app <pod-name> -- /bin/bash
 ```
 
-Helm
+### Helm
 
 ```bash
 # List releases
@@ -674,7 +784,7 @@ helm rollback carts -n retail-app
 helm uninstall carts -n retail-app
 ```
 
-Terraform
+### Terraform
 
 ```bash
 # Validate configuration
@@ -693,7 +803,7 @@ terraform state show <resource>
 terraform taint <resource>
 ```
 
-AWS CLI
+### AWS CLI
 
 ```bash
 # Get RDS endpoints
@@ -704,19 +814,43 @@ aws eks describe-cluster --name project-bedrock-cluster
 
 # Get Secrets Manager value
 aws secretsmanager get-secret-value --secret-id project-bedrock-db-credentials --query SecretString --output text | jq
+
+# List all project log groups
+aws logs describe-log-groups --region us-east-1 \
+  --query 'logGroups[?contains(logGroupName, `project-bedrock`) || contains(logGroupName, `containerinsights`) || contains(logGroupName, `bedrock-asset`)].logGroupName' \
+  --output table
 ```
 
 ---
 
-Support
+##  Environment Variables Reference
 
-For issues or questions:
+| **Variable** | **Value** | **Description** |
+|---------|----------|------| 
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `CLUSTER_NAME` | `project-bedrock-cluster` | EKS cluster name |
+| `NAMESPACE` | `retail-app` | Kubernetes namespace |
+| `DB_USERNAME` | `admin MySQL` | MySQL username |
+| `DB_PASSWORD` | `YourSecurePassword123!` | MySQL password|
+| `DYNAMODB_TABLE` | `project-bedrock-retail-store` | DynamoDB table name |
 
-· Check the Troubleshooting section
-· Review the AWS EKS Documentation
-· Review the Terraform AWS Provider Documentation
+---
 
+##  Tags
+
+All resources are tagged with:
+```
+Project: karatu-2025-capstone
 ```
 
 ---
+
+##  Support
+
+**For issues or questions:**
+
+- Check the Troubleshooting section
+- Review the AWS EKS Documentation
+- Review the Terraform AWS Provider Documentation
+
 

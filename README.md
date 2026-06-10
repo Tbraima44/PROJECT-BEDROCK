@@ -9,6 +9,7 @@
 
 - [Overview](#overview)
 - [Architecture](#architecture)
+- [Repository Structure](#repository-structure)
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Infrastructure Details](#infrastructure-details)
@@ -57,7 +58,6 @@ This project provisions a secure Amazon EKS cluster, deploys the AWS Retail Stor
 ├── .github/workflows/          # CI/CD pipelines
 │   ├── deploy-app.yaml         # Deploys application to EKS
 │   ├── terraform-apply.yml     # Runs on merge to main, applies infrastructure
-│   ├── terraform-destroy.yml   # Run manually, delete infrastructure
 │   └── terraform-plan.yml      # Runs on PR, posts plan
 │
 ├── docs/                     # Documentation
@@ -268,15 +268,23 @@ All **services** (carts, catalog, orders, checkout, ui) are deployed with the sa
 
 ### Services
 
-| **Service** | **Database** | **Helm Chart** |
+| **Service** | **Database** | **Chart** |
 |------------|------------|------------| 
 | **UI** | N/A | retail-store-app-charts/ui/chart/ |
 | **Carts** | RDS MySQL | retail-store-app-charts/cart/chart/ |
 | **Catalog** | RDS MySQL | retail-store-app-charts/catalog/chart/ |
 | **Orders** | RDS MySQL | retail-store-app-charts/orders/chart/ |
 | **Checkout** | DynamoDB | retail-store-app-charts/checkout/chart/ |
-| **RabbitMQ** | In-cluster | Built-in |
-| **Redis** | In-cluster | Built-in |
+| **RabbitMQ** | N/A | Static manifest |
+| **Redis** | N/A | Static manifest |
+
+### Kubernetes Namespaces
+
+| **Namespace** | **Purpose** |
+|-----------|---------|
+| `retail-app` | Application microservices (carts, catalog, orders, checkout, ui, rabbitmq, redis) |
+| `amazon-cloudwatch` | Observability (FluentBit, CloudWatch agent, controller) |
+| `kube-system` | System components (LB controller, CoreDNS, kube-proxy) |
 
 ### Ingress
 
@@ -437,7 +445,7 @@ kubectl delete pod -n retail-app <any-pod>
 
 ---
 
-##  Cleanup
+## 🗑️ Cleanup
 
 ### Delete Application Resources
 
@@ -455,6 +463,16 @@ cd ..
 ```
 
 ⚠️ **Note:** You may need to manually delete the ALB, release Elastic IPs, and delete network interfaces before Terraform destroy can complete. See troubleshooting section if destroy fails.
+
+## Destroy All (To destroy all AWS resources and clean up the environment)
+
+```bash
+# Automated teardown (handles ALB, NAT Gateway, EIPs, S3, IAM keys, etc.)
+chmod +x scripts/destroy-all.sh && ./scripts/destroy-all.sh
+
+# Or with a custom database password
+./scripts/destroy-all.sh "YourSecurePassword123!"
+```
 
 ---
 
@@ -507,7 +525,7 @@ Common issues:
 kubectl logs -n kube-system deployment/aws-load-balancer-controller --tail=30
 ```
 
-Common issues:
+**Common issues:**
 
 - Missing CRDs → Apply CRDs manually
 - RBAC permissions → Update ClusterRole
@@ -533,6 +551,6 @@ This project is created for the Karatu 2025 Capstone program.
 
 ##  Contact
 
-**Student-Id:** ALT-SOE-025-3778
-**Repository:** https://github.com/Tbraima44/PROJECT-BEDROCK
-**Application URL:** [ALB URL after deployment]
+- **Student-Id:** ALT-SOE-025-3778
+- **Repository:** https://github.com/Tbraima44/PROJECT-BEDROCK
+- **Application URL:** [ALB URL after deployment]

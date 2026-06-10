@@ -1,6 +1,12 @@
 name: Deploy Application
 
 on:
+  workflow_run:
+    workflows: ["Terraform Apply"]
+    types:
+      - completed
+    branches:
+      - main
   push:
     branches:
       - main
@@ -8,12 +14,6 @@ on:
       - 'kubernetes/**'
       - 'lambda/**'
       - 'scripts/**'
-  workflow_run:
-    workflows: ["Terraform Apply"]
-    types:
-      - completed
-    branches:
-      - main
   workflow_dispatch:
 
 env:
@@ -25,8 +25,8 @@ jobs:
   deploy-application:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'push' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && !contains(toJSON(github.event.head_commit.modified), 'terraform/'))
     runs-on: ubuntu-latest
     
     steps:

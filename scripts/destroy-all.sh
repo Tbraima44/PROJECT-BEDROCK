@@ -16,7 +16,6 @@ echo "🗑️  Deleting application..."
 
 # Uninstall Helm releases
 helm uninstall ui catalog carts orders checkout -n retail-app 2>/dev/null || true
-helm uninstall rabbitmq redis -n retail-app 2>/dev/null || true
 
 # Delete namespaces
 kubectl delete namespace retail-app --ignore-not-found=true 2>/dev/null || true
@@ -62,53 +61,91 @@ if [ -n "$BUCKET_NAME" ]; then
   echo "  Emptying $BUCKET_NAME..."
   aws s3 rm "s3://$BUCKET_NAME" --recursive --region "$REGION" 2>/dev/null || true
   
-  # Delete versions and markers
-  aws s3api delete-objects --bucket "$BUCKET_NAME" \
-    --delete "$(aws s3api list-object-versions --bucket "$BUCKET_NAME" --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --region "$REGION" 2>/dev/null || echo '{"Objects":[]}')" \
-    --region "$REGION" 2>/dev/null || true
-    
-  aws s3api delete-objects --bucket "$BUCKET_NAME" \
-    --delete "$(aws s3api list-object-versions --bucket "$BUCKET_NAME" --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --region "$REGION" 2>/dev/null || echo '{"Objects":[]}')" \
-    --region "$REGION" 2>/dev/null || true
-fi
-
-# ------------------------------------------------------------------
-# 5. Pre-cleanup network resources
-# ------------------------------------------------------------------
-echo "🗑️  Cleaning up network resources..."
-
-# Get VPC ID
-VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region "$REGION" 2>/dev/null || echo "")
-
-if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
-  # Delete ALBs
-  echo "  Deleting ALBs..."
-  aws elbv2 describe-load-balancers --region "$REGION" --query "LoadBalancers[?VpcId=='$VPC_ID'].LoadBalancerArn" --output text 2>/dev/null | xargs -n1 aws elbv2 delete-load-balancer --load-balancer-arn --region "$REGION" 2>/dev/null || true
-
-  # Delete NAT Gateways
-  echo "  Deleting NAT Gateways..."
-  aws ec2 describe-nat-gateways --region "$REGION" --filter "Name=vpc-id,Values=$VPC_ID" --query 'NatGateways[*].NatGatewayId' --output text 2>/dev/null | xargs -n1 aws ec2 delete-nat-gateway --nat-gateway-id --region "$REGION" 2>/dev/null || true
+  # Delete versions
+  VERSIONS=$(aws s3api list-object-versions --bucket "$BUCKET_NAME" --query='{Objects: Versions[].{Key:Key,VersionId:VersionId}}' --output json --region "$REGION" 2>/dev/null || echo '{"Objects":[]}')
+  aws s3api delete-objects --bucket "$BUCKET_NAME" --delete "$VERSIONS" --region "$REGION" 2>/dev/null || true
   
-  echo "  Waiting for NAT Gateways to delete..."
-  sleep 120
-
-  # Release EIPs
-  echo "  Releasing Elastic IPs..."
-  aws ec2 describe-addresses --region "$REGION" --query 'Addresses[*].AllocationId' --output text 2>/dev/null | xargs -n1 aws ec2 release-address --allocation-id --region "$REGION" 2>/dev/null || true
-
-  # Delete network interfaces
-  echo "  Deleting network interfaces..."
-  aws ec2 describe-network-interfaces --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null | xargs -n1 aws ec2 delete-network-interface --network-interface-id --region "$REGION" 2>/dev/null || true
+  # Delete markers
+  MARKERS=$(aws s3api list-object-versions --bucket "$BUCKET_NAME" --query='{Objects: DeleteMarkers[].{Key:Key,VersionId:VersionId}}' --output json --region "$REGION" 2>/dev/null || echo '{"Objects":[]}')
+  aws s3api delete-objects --bucket "$BUCKET_NAME" --delete "$MARKERS" --region "$REGION" 2>/dev/null || true
 fi
 
 # ------------------------------------------------------------------
-# 6. Force delete Secrets Manager secret
+# 5. Force delete Secrets Manager secret
 # ------------------------------------------------------------------
 echo "🗑️  Deleting Secrets Manager secret..."
 aws secretsmanager delete-secret --secret-id project-bedrock-db-credentials --force-delete-without-recovery --region "$REGION" 2>/dev/null || true
 
 # ------------------------------------------------------------------
-# 7. Terraform destroy
+# 6. Force delete VPC dependencies (BEFORE Terraform destroy)
+# ------------------------------------------------------------------
+echo "🗑️  Pre-cleaning VPC dependencies..."
+
+VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-vpc" --query 'Vpcs[0].VpcId' --output text --region "$REGION" 2>/dev/null || echo "")
+
+if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+  echo "  Found VPC: $VPC_ID"
+
+  # Delete ALBs first
+  echo "  Deleting ALBs..."
+  aws elbv2 describe-load-balancers --region "$REGION" 2>/dev/null | jq -r '.LoadBalancers[].LoadBalancerArn' 2>/dev/null | while read arn; do
+    [ -n "$arn" ] && aws elbv2 delete-load-balancer --load-balancer-arn "$arn" --region "$REGION" && echo "    Deleted ALB" || true
+  done
+  sleep 30
+
+  # Delete NAT Gateways
+  echo "  Deleting NAT Gateways..."
+  aws ec2 describe-nat-gateways --region "$REGION" --filter "Name=vpc-id,Values=$VPC_ID" --query 'NatGateways[*].NatGatewayId' --output text | tr '\t' '\n' | while read ngw; do
+    [ -n "$ngw" ] && aws ec2 delete-nat-gateway --nat-gateway-id "$ngw" --region "$REGION" && echo "    Deleted NAT: $ngw" || true
+  done
+  echo "  Waiting for NAT Gateways to delete..."
+  sleep 120
+
+  # Release all EIPs
+  echo "  Releasing Elastic IPs..."
+  aws ec2 describe-addresses --region "$REGION" --query 'Addresses[*].AllocationId' --output text | tr '\t' '\n' | while read eip; do
+    [ -n "$eip" ] && aws ec2 release-address --allocation-id "$eip" --region "$REGION" 2>/dev/null && echo "    Released EIP" || true
+  done
+
+  # Delete network interfaces
+  echo "  Deleting network interfaces..."
+  aws ec2 describe-network-interfaces --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text | tr '\t' '\n' | while read eni; do
+    [ -n "$eni" ] && aws ec2 delete-network-interface --network-interface-id "$eni" --region "$REGION" 2>/dev/null && echo "    Deleted ENI" || true
+  done
+
+  # Delete security groups (except default)
+  echo "  Deleting security groups..."
+  aws ec2 describe-security-groups --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'SecurityGroups[?GroupName!=`default`].GroupId' --output text | tr '\t' '\n' | while read sg; do
+    [ -n "$sg" ] && aws ec2 delete-security-group --group-id "$sg" --region "$REGION" 2>/dev/null && echo "    Deleted SG" || true
+  done
+
+  # Delete route tables (except main)
+  echo "  Deleting route tables..."
+  aws ec2 describe-route-tables --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'RouteTables[?Associations[0].Main==`false`].RouteTableId' --output text | tr '\t' '\n' | while read rt; do
+    [ -n "$rt" ] && aws ec2 delete-route-table --route-table-id "$rt" --region "$REGION" 2>/dev/null && echo "    Deleted route table" || true
+  done
+
+  # Detach and delete internet gateway
+  IGW_ID=$(aws ec2 describe-internet-gateways --region "$REGION" --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query 'InternetGateways[0].InternetGatewayId' --output text 2>/dev/null || echo "")
+  if [ -n "$IGW_ID" ] && [ "$IGW_ID" != "None" ]; then
+    echo "  Detaching and deleting IGW: $IGW_ID"
+    aws ec2 detach-internet-gateway --internet-gateway-id "$IGW_ID" --vpc-id "$VPC_ID" --region "$REGION" 2>/dev/null || true
+    aws ec2 delete-internet-gateway --internet-gateway-id "$IGW_ID" --region "$REGION" 2>/dev/null || true
+  fi
+
+  # Delete subnets
+  echo "  Deleting subnets..."
+  aws ec2 describe-subnets --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text | tr '\t' '\n' | while read subnet; do
+    [ -n "$subnet" ] && aws ec2 delete-subnet --subnet-id "$subnet" --region "$REGION" 2>/dev/null && echo "    Deleted subnet" || true
+
+  # Finally delete the VPC
+  sleep 10
+  echo "  Deleting VPC: $VPC_ID"
+  aws ec2 delete-vpc --vpc-id "$VPC_ID" --region "$REGION" 2>/dev/null && echo "  ✅ VPC deleted" || echo "  ⚠️ VPC may have remaining dependencies"
+fi
+
+# ------------------------------------------------------------------
+# 7. Terraform destroy (cleanup remaining resources)
 # ------------------------------------------------------------------
 echo "🗑️  Running Terraform destroy..."
 cd "$(dirname "$0")/../terraform"
@@ -116,15 +153,17 @@ terraform init 2>/dev/null || true
 terraform destroy -auto-approve -var="db_password=$DB_PASSWORD" 2>/dev/null || true
 
 # ------------------------------------------------------------------
-# 8. Clean up remaining resources
+# 8. Final cleanup - Release any remaining EIPs and ENIs
 # ------------------------------------------------------------------
 echo "🗑️  Final cleanup..."
 
-# Delete remaining EIPs
-aws ec2 describe-addresses --region "$REGION" --query 'Addresses[*].AllocationId' --output text 2>/dev/null | xargs -n1 aws ec2 release-address --allocation-id --region "$REGION" 2>/dev/null || true
+aws ec2 describe-addresses --region "$REGION" --query 'Addresses[*].AllocationId' --output text | tr '\t' '\n' | while read eip; do
+  [ -n "$eip" ] && aws ec2 release-address --allocation-id "$eip" --region "$REGION" 2>/dev/null || true
+done
 
-# Delete remaining network interfaces
-aws ec2 describe-network-interfaces --region "$REGION" --filters "Name=status,Values=available" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text 2>/dev/null | xargs -n1 aws ec2 delete-network-interface --network-interface-id --region "$REGION" 2>/dev/null || true
+aws ec2 describe-network-interfaces --region "$REGION" --filters "Name=status,Values=available" --query 'NetworkInterfaces[*].NetworkInterfaceId' --output text | tr '\t' '\n' | while read eni; do
+  [ -n "$eni" ] && aws ec2 delete-network-interface --network-interface-id "$eni" --region "$REGION" 2>/dev/null || true
+done
 
 echo ""
 echo "================================================================"

@@ -33,14 +33,7 @@ echo "📁 Creating namespace '$NAMESPACE'..."
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------
-# 4. Add Helm repos
-# ------------------------------------------------------------------
-echo "📦 Adding Helm repositories..."
-helm repo add bitnami https://charts.bitnami.com/bitnami 2>/dev/null || true
-helm repo update
-
-# ------------------------------------------------------------------
-# 5. Get infrastructure values
+# 4. Get infrastructure values
 # ------------------------------------------------------------------
 echo "📊 Fetching infrastructure endpoints..."
 MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
@@ -48,7 +41,7 @@ VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-v
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
 
 # ------------------------------------------------------------------
-# 6. Get database credentials
+# 5. Get database credentials
 # ------------------------------------------------------------------
 echo "🔑 Retrieving database credentials..."
 DB_SECRET=$(aws secretsmanager get-secret-value --secret-id project-bedrock-db-credentials --query SecretString --output text --region "$REGION")
@@ -56,7 +49,7 @@ MYSQL_USER=$(echo "$DB_SECRET" | jq -r '.mysql_username')
 MYSQL_PASS=$(echo "$DB_SECRET" | jq -r '.mysql_password')
 
 # ------------------------------------------------------------------
-# 7. Install AWS Load Balancer Controller
+# 6. Install AWS Load Balancer Controller
 # ------------------------------------------------------------------
 echo "🌐 Installing AWS Load Balancer Controller..."
 
@@ -103,7 +96,7 @@ kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balanc
 echo "  ✅ LB Controller is running."
 
 # ------------------------------------------------------------------
-# 8. Deploy Retail Store with Helm (using local charts and values.yaml)
+# 7. Deploy Retail Store with Helm (using local charts and values.yaml)
 # ------------------------------------------------------------------
 echo "🚀 Deploying Retail Store with Helm..."
 
@@ -132,7 +125,7 @@ helm upgrade --install ui "${CHARTS_DIR}/ui/chart/" \
   --namespace "$NAMESPACE"
 
 # ------------------------------------------------------------------
-# 9. Deploy RabbitMQ and Redis
+# 8. Deploy RabbitMQ and Redis
 # ------------------------------------------------------------------
 echo "  🐰 Deploying RabbitMQ..."
 kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
@@ -141,13 +134,13 @@ echo "  📦 Deploying Redis..."
 kubectl apply -f kubernetes/retail-store/redis.yaml
 
 # ------------------------------------------------------------------
-# 10. Enable CloudWatch Observability
+# 9. Enable CloudWatch Observability
 # ------------------------------------------------------------------
 echo "📊 Enabling CloudWatch Observability..."
 aws eks create-addon --cluster-name "$CLUSTER_NAME" --addon-name amazon-cloudwatch-observability --region "$REGION" 2>/dev/null || echo "Add-on may already exist"
 
 # ------------------------------------------------------------------
-# 11. Apply RBAC and Ingress
+# 10. Apply RBAC and Ingress
 # ------------------------------------------------------------------
 echo "🔐 Applying RBAC..."
 kubectl apply -f kubernetes/rbac/dev-view-role.yaml
@@ -156,14 +149,14 @@ echo "🚪 Applying Ingress..."
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 # ------------------------------------------------------------------
-# 12. Update Lambda
+# 11. Update Lambda
 # ------------------------------------------------------------------
 echo "⚡ Updating Lambda..."
 cd lambda/bedrock-asset-processor && zip -r ../bedrock-asset-processor.zip index.py && cd ../..
 aws lambda update-function-code --function-name bedrock-asset-processor --zip-file fileb://lambda/bedrock-asset-processor.zip --region "$REGION" --no-cli-pager
 
 # ------------------------------------------------------------------
-# 13. Wait for ALB
+# 12. Wait for ALB
 # ------------------------------------------------------------------
 echo "⏳ Waiting for ALB..."
 sleep 30
