@@ -134,9 +134,10 @@ if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
   fi
 
   # Delete subnets
-  echo "  Deleting subnets..."
-  aws ec2 describe-subnets --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text | tr '\t' '\n' | while read subnet; do
-    [ -n "$subnet" ] && aws ec2 delete-subnet --subnet-id "$subnet" --region "$REGION" 2>/dev/null && echo "    Deleted subnet" || true
+echo "  Deleting subnets..."
+aws ec2 describe-subnets --region "$REGION" --filters "Name=vpc-id,Values=$VPC_ID" --query 'Subnets[*].SubnetId' --output text | tr '\t' '\n' | while read subnet; do
+  [ -n "$subnet" ] && aws ec2 delete-subnet --subnet-id "$subnet" --region "$REGION" 2>/dev/null && echo "    Deleted subnet" || true
+done
 
   # Finally delete the VPC
   sleep 10
