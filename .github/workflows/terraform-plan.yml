@@ -43,7 +43,11 @@ jobs:
       - name: Terraform Plan
         working-directory: terraform
         id: plan
-        run: terraform plan -no-color -out=tfplan -var="db_password=${{ secrets.DB_PASSWORD }}"
+        run: |
+          terraform plan -no-color -var="db_password=${{ secrets.DB_PASSWORD }}" | tee plan.txt
+          echo "PLAN_OUTPUT<<EOF" >> $GITHUB_ENV
+          cat plan.txt >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
         env:
           TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
 
