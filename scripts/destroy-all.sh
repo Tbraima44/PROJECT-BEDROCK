@@ -153,7 +153,8 @@ for i in $(seq 1 5); do
   echo "  Retrying VPC delete... ($i/5)"
   sleep 10
 done
-
+  fi
+  
 # ------------------------------------------------------------------
 # 7. Terraform destroy (cleanup remaining resources)
 # ------------------------------------------------------------------
