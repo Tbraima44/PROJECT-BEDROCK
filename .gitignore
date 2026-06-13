@@ -41,7 +41,7 @@ credentials
 *.pem
 *.key
 
-
+.github/workflows/terraform-destroy.yaml
 
 kubeconfig
 *.kubeconfig
