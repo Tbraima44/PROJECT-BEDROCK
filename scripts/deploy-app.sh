@@ -88,6 +88,9 @@ subjects:
   namespace: kube-system
 EOF
 
+# Add developer view permissions to aws-auth configmap
+kubectl patch configmap aws-auth -n kube-system --type merge -p '{"data":{"mapUsers":"- userarn: arn:aws:iam::'$ACCOUNT_ID':user/bedrock-dev-view\n  username: bedrock-dev-view\n  groups:\n  - view"}}'
+
 # Deploy controller with dynamic VPC ID
 kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
 sed "s/--aws-vpc-id=.*/--aws-vpc-id=$VPC_ID/" kubernetes/aws-load-balancer-controller/deployment.yaml | kubectl apply -f -
