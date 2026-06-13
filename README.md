@@ -251,10 +251,40 @@ dynamodb:
   enabled: false
 
 carts:
+  replicaCount: 2
+  
   datasource:
-    url: "jdbc:mysql://RDS_ENDPOINT:3306/retaildb"
+    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
     username: "admin"
     password: "YourSecurePassword123!"
+
+  # Resource limits
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /actuator/health/liveness
+      port: 8080
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /actuator/health/readiness
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
 # ... similar for catalog, orders, checkout```
 
 **Single command deployment:**
@@ -304,7 +334,7 @@ kubectl apply -f kubernetes/retail-store/ingress.yaml
 |--------------|-------------|------------|
 |**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
 | **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
-| **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/**) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
+| **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/deploy-app.sh) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
 
 After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
 
