@@ -514,7 +514,7 @@ You should see the InnovateMart Retail Store homepage with product listings.
 
 ```bash
 echo "test image content" > test-image.jpg
-aws s3 cp test.jpg s3://bedrock-assets-YOUR-STUDENT-ID/ --profile bedrock-dev
+aws s3 cp test-image.jpg s3://bedrock-assets-YOUR-STUDENT-ID/ --profile bedrock-dev
 ```
 
 **Check CloudWatch Logs:**
