@@ -251,41 +251,12 @@ dynamodb:
   enabled: false
 
 carts:
-  replicaCount: 2
-  
   datasource:
     url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
     username: "admin"
     password: "YourSecurePassword123!"
-
-  # Resource limits
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-
-  # Health checks
-  livenessProbe:
-    httpGet:
-      path: /actuator/health/liveness
-      port: 8080
-    initialDelaySeconds: 60
-    periodSeconds: 10
-    timeoutSeconds: 5
-    failureThreshold: 3
-
-  readinessProbe:
-    httpGet:
-      path: /actuator/health/readiness
-      port: 8080
-    initialDelaySeconds: 30
-    periodSeconds: 5
-    timeoutSeconds: 3
-    failureThreshold: 3
-# ... similar for catalog, orders, checkout```
+# ... similar for catalog, orders, checkout
+```
 
 **Single command deployment:**
 
