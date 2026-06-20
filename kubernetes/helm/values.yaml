@@ -1,44 +1,42 @@
 # =============================================================================
 # Retail Store Sample App - Helm Values
 # =============================================================================
-# This file overrides the default chart values to use managed AWS services
-# instead of in-cluster databases.
-# =============================================================================
 
 # Disable all in-cluster databases
 mysql:
   enabled: false
-postgresql:
-  enabled: false
 dynamodb:
   enabled: false
+
+# Number of replicas for all services
+replicaCount: 1
 
 # ---------------------------------------------------------------------------
 # Cart Service - MySQL RDS
 # ---------------------------------------------------------------------------
 carts:
   datasource:
-    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
-    username: "admin"
-    password: "YourSecurePassword123!"
+    url: "jdbc:mysql://MYSQL_HOST_PLACEHOLDER:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "MYSQL_USER_PLACEHOLDER"
+    password: "MYSQL_PASS_PLACEHOLDER"
 
 # ---------------------------------------------------------------------------
 # Catalog Service - MySQL RDS
 # ---------------------------------------------------------------------------
 catalog:
   datasource:
-    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
-    username: "admin"
-    password: "YourSecurePassword123!"
+    url: "jdbc:mysql://MYSQL_HOST_PLACEHOLDER:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "MYSQL_USER_PLACEHOLDER"
+    password: "MYSQL_PASS_PLACEHOLDER"
 
 # ---------------------------------------------------------------------------
 # Orders Service - MySQL RDS
 # ---------------------------------------------------------------------------
 orders:
   datasource:
-    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
-    username: "admin"
-    password: "YourSecurePassword123!"
+    url: "jdbc:mysql://MYSQL_HOST_PLACEHOLDER:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "MYSQL_USER_PLACEHOLDER"
+    password: "MYSQL_PASS_PLACEHOLDER"
 
 # ---------------------------------------------------------------------------
 # Checkout Service - DynamoDB

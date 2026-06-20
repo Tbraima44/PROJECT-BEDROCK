@@ -417,10 +417,8 @@ Add the following secrets:
 | **Workflow** | **Trigger** | **Action** |
 |--------------|-------------|------------|
 |**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
-| **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
+| **Terraform Apply** | Merge to or Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
 | **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/deploy-app.sh) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
-
-After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
 
 ### Testing the Pipeline
 

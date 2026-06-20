@@ -11,7 +11,6 @@ NAMESPACE="retail-app"
 
 # Paths
 CHARTS_DIR="./retail-store-app-charts"
-VALUES_FILE="./kubernetes/helm/values.yaml"
 
 # ------------------------------------------------------------------
 # 1. Prerequisites
@@ -33,7 +32,7 @@ echo "📁 Creating namespace '$NAMESPACE'..."
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------
-# 4. Get infrastructure values
+# 4. Fetch infrastructure endpoints
 # ------------------------------------------------------------------
 echo "📊 Fetching infrastructure endpoints..."
 MYSQL_HOST=$(aws rds describe-db-instances --db-instance-identifier project-bedrock-mysql --query 'DBInstances[0].Endpoint.Address' --output text --region "$REGION")
@@ -41,7 +40,7 @@ VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=project-bedrock-v
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
 
 # ------------------------------------------------------------------
-# 5. Get database credentials
+# 5. Get database credentials from Secrets Manager
 # ------------------------------------------------------------------
 echo "🔑 Retrieving database credentials..."
 DB_SECRET=$(aws secretsmanager get-secret-value --secret-id project-bedrock-db-credentials --query SecretString --output text --region "$REGION")
@@ -49,7 +48,18 @@ MYSQL_USER=$(echo "$DB_SECRET" | jq -r '.mysql_username')
 MYSQL_PASS=$(echo "$DB_SECRET" | jq -r '.mysql_password')
 
 # ------------------------------------------------------------------
-# 6. Install AWS Load Balancer Controller
+# 6. Generate a temporary values file with real credentials
+# ------------------------------------------------------------------
+echo "⚙️  Generating deployment values..."
+cp kubernetes/helm/values.yaml /tmp/retail-values.yaml
+sed -i "s/MYSQL_HOST_PLACEHOLDER/$MYSQL_HOST/g" /tmp/retail-values.yaml
+sed -i "s/MYSQL_USER_PLACEHOLDER/$MYSQL_USER/g" /tmp/retail-values.yaml
+sed -i "s/MYSQL_PASS_PLACEHOLDER/$MYSQL_PASS/g" /tmp/retail-values.yaml
+
+VALUES_FILE="/tmp/retail-values.yaml"
+
+# ------------------------------------------------------------------
+# 7. Install AWS Load Balancer Controller
 # ------------------------------------------------------------------
 echo "🌐 Installing AWS Load Balancer Controller..."
 
@@ -88,9 +98,6 @@ subjects:
   namespace: kube-system
 EOF
 
-# Add developer view permissions to aws-auth configmap
-kubectl patch configmap aws-auth -n kube-system --type merge -p '{"data":{"mapUsers":"- userarn: arn:aws:iam::'$ACCOUNT_ID':user/bedrock-dev-view\n  username: bedrock-dev-view\n  groups:\n  - view"}}'
-
 # Deploy controller with dynamic VPC ID
 kubectl delete deployment aws-load-balancer-controller -n kube-system --ignore-not-found=true
 sed "s/--aws-vpc-id=.*/--aws-vpc-id=$VPC_ID/" kubernetes/aws-load-balancer-controller/deployment.yaml | kubectl apply -f -
@@ -99,36 +106,27 @@ kubectl wait --for=condition=available --timeout=120s deployment/aws-load-balanc
 echo "  ✅ LB Controller is running."
 
 # ------------------------------------------------------------------
-# 7. Deploy Retail Store with Helm (using local charts and values.yaml)
+# 8. Deploy Retail Store with Helm
 # ------------------------------------------------------------------
 echo "🚀 Deploying Retail Store with Helm..."
 
 echo "  🛒 Deploying carts..."
-helm upgrade --install carts "${CHARTS_DIR}/cart/chart/" \
-  --namespace "$NAMESPACE" \
-  --values "$VALUES_FILE"
+helm upgrade --install carts "${CHARTS_DIR}/cart/chart/" --namespace "$NAMESPACE" --values "$VALUES_FILE"
 
 echo "  📚 Deploying catalog..."
-helm upgrade --install catalog "${CHARTS_DIR}/catalog/chart/" \
-  --namespace "$NAMESPACE" \
-  --values "$VALUES_FILE"
+helm upgrade --install catalog "${CHARTS_DIR}/catalog/chart/" --namespace "$NAMESPACE" --values "$VALUES_FILE"
 
 echo "  📦 Deploying orders..."
-helm upgrade --install orders "${CHARTS_DIR}/orders/chart/" \
-  --namespace "$NAMESPACE" \
-  --values "$VALUES_FILE"
+helm upgrade --install orders "${CHARTS_DIR}/orders/chart/" --namespace "$NAMESPACE" --values "$VALUES_FILE"
 
 echo "  💰 Deploying checkout..."
-helm upgrade --install checkout "${CHARTS_DIR}/checkout/chart/" \
-  --namespace "$NAMESPACE" \
-  --values "$VALUES_FILE"
+helm upgrade --install checkout "${CHARTS_DIR}/checkout/chart/" --namespace "$NAMESPACE" --values "$VALUES_FILE"
 
 echo "  🖥️  Deploying UI..."
-helm upgrade --install ui "${CHARTS_DIR}/ui/chart/" \
-  --namespace "$NAMESPACE"
+helm upgrade --install ui "${CHARTS_DIR}/ui/chart/" --namespace "$NAMESPACE"
 
 # ------------------------------------------------------------------
-# 8. Deploy RabbitMQ and Redis
+# 9. Deploy RabbitMQ and Redis
 # ------------------------------------------------------------------
 echo "  🐰 Deploying RabbitMQ..."
 kubectl apply -f kubernetes/retail-store/rabbitmq.yaml
@@ -137,29 +135,32 @@ echo "  📦 Deploying Redis..."
 kubectl apply -f kubernetes/retail-store/redis.yaml
 
 # ------------------------------------------------------------------
-# 9. Enable CloudWatch Observability
+# 10. Enable CloudWatch Observability
 # ------------------------------------------------------------------
 echo "📊 Enabling CloudWatch Observability..."
 aws eks create-addon --cluster-name "$CLUSTER_NAME" --addon-name amazon-cloudwatch-observability --region "$REGION" 2>/dev/null || echo "Add-on may already exist"
 
 # ------------------------------------------------------------------
-# 10. Apply RBAC and Ingress
+# 11. Apply RBAC and Ingress
 # ------------------------------------------------------------------
 echo "🔐 Applying RBAC..."
 kubectl apply -f kubernetes/rbac/dev-view-role.yaml
+
+# Add developer user to aws-auth ConfigMap
+kubectl patch configmap aws-auth -n kube-system --type merge -p '{"data":{"mapUsers":"- userarn: arn:aws:iam::'$ACCOUNT_ID':user/bedrock-dev-view\n  username: bedrock-dev-view\n  groups:\n  - view"}}'
 
 echo "🚪 Applying Ingress..."
 kubectl apply -f kubernetes/retail-store/ingress.yaml
 
 # ------------------------------------------------------------------
-# 11. Update Lambda
+# 12. Update Lambda
 # ------------------------------------------------------------------
 echo "⚡ Updating Lambda..."
 cd lambda/bedrock-asset-processor && zip -r ../bedrock-asset-processor.zip index.py && cd ../..
 aws lambda update-function-code --function-name bedrock-asset-processor --zip-file fileb://lambda/bedrock-asset-processor.zip --region "$REGION" --no-cli-pager
 
 # ------------------------------------------------------------------
-# 12. Wait for ALB
+# 13. Wait for ALB
 # ------------------------------------------------------------------
 echo "⏳ Waiting for ALB..."
 sleep 30

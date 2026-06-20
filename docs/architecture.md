@@ -187,7 +187,7 @@ def handler(event, context):
 | **Workflow** | **Trigger** | **Action** |
 |-----------|------|---------|  
 | **Terraform Plan** | Pull Request (paths: `terraform/**`) | `terraform plan` + PR comment |
-| **Terraform Apply** | Push to `main` (paths: `terraform/**`) | `terraform apply -auto-approve` |
+| **Terraform Apply** | Merge to or Push to `main` (paths: `terraform/**`) | `terraform apply -auto-approve` |
 | **Deploy Application** | Push to `main` (paths: `kubernetes/**, lambda/**, scripts/**`) or after Apply | `deploy-app.sh` |
 
 **Security:**

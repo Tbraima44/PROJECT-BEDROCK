@@ -250,11 +250,11 @@ mysql:
 dynamodb:
   enabled: false
 
-carts:
+    carts:
   datasource:
-    url: "jdbc:mysql://project-bedrock-mysql.cajmqcu2syh5.us-east-1.rds.amazonaws.com:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
-    username: "admin"
-    password: "YourSecurePassword123!"
+    url: "jdbc:mysql://MYSQL_HOST_PLACEHOLDER:3306/retaildb?useSSL=false&allowPublicKeyRetrieval=true"
+    username: "MYSQL_USER_PLACEHOLDER"
+    password: "MYSQL_PASS_PLACEHOLDER"
 # ... similar for catalog, orders, checkout
 ```
 
@@ -304,10 +304,8 @@ kubectl apply -f kubernetes/retail-store/ingress.yaml
 | **Workflow** | **Trigger** | **Action** |
 |--------------|-------------|------------|
 |**Terraform Plan** | Pull Request (terraform/**) | Runs terraform plan and posts the output as a PR comment |
-| **Terraform Apply** | Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
+| **Terraform Apply** | Merge to or Push to main (terraform/**) | Runs terraform apply -auto-approve to update infrastructure |
 | **Deploy Application** | Run after successful `Terraform Apply` or Push to main (kubernetes/**, lambda/**, scripts/deploy-app.sh) or manual (workflow_dispatch) | Executes deploy-app.sh to deploy the latest application version |
-
-After a successful pipeline run, download the grading.json artifact from the **Actions** tab → latest run → **Artifacts**.
 
 ### Required GitHub Secrets
 
